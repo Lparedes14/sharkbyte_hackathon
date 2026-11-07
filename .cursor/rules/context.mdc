@@ -1,0 +1,14 @@
+---
+description: Project context for the agentic build workflow
+alwaysApply: true
+---
+
+Read `CONTEXT.md` first for the current decisions, status and next steps, then `PLAN.md` for the full design.
+
+Working rules:
+- Python 3.12. Use `requests`, `PyGithub` and `python-dotenv`. Call Swarms with raw `requests`, not the SDK.
+- Never write secrets to files, logs or prompts. `.env` stays in `.gitignore`.
+- Pass user text to workflows through `env:` or the event file, never through `${{ }}` inside `run:`.
+- The orchestrator's own GitHub comments never start with `/`.
+- Every Swarms phase asks its agents for a final fenced JSON block, and the code parses the last one.
+- Work one block of `PLAN.md` section 13 at a time. Ask before adding dependencies.

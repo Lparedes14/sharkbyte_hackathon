@@ -26,7 +26,7 @@ The Swarms prize is the main target, so **every agent that thinks must run in Sw
 - He wants **no space or launch theme**. Use plain, normal names.
 - No UI for now. The interface is the Grok Bot app, GitHub and screenshots.
 - Approval gates are required. Decisions go through a human in Grok Bot.
-- **Cursor writes the code.** He builds `orchestrator/` himself in Cursor's Agent mode. This keeps the "Cursor as core coding agent" claim true. Claude Code in the cloud only writes planning docs, prompts and diagrams. Do not write the orchestrator code for him unless he asks.
+- **Cursor writes the code.** He builds `orchestrator/` himself in Cursor's Agent mode. This keeps the "Cursor as core coding agent" claim true. Claude Code in the cloud only writes planning docs, prompts and diagrams. Do not write the orchestrator code for him unless he asks. He asked once: the Block 1 skeleton (`orchestrator/`, `home.yml`, `requirements.txt`, `projects.json`) was written in Claude Code because his Cursor tokens were limited. State this accurately in the submission, and keep using Cursor for later blocks where he can.
 - Never ask him to paste secrets into a chat. Keys live in `.env` (gitignored) locally and in GitHub Actions secrets.
 - Keep Cursor's **Self-hosted machines** and **Enable my machines** settings off, so Cloud Agents run in Cursor's cloud and never on his laptop, where `.env` lives.
 - Keep answers short and practical. Ask before irreversible actions (creating repos, merging, deleting).
@@ -182,7 +182,7 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 5. **S5: done** (see section 12).
 6. **S6: done** (see section 12). The trigger is the `status` event, not `deployment_status`.
 7. **S7: done** (see section 12).
-8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete".
+8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete". **Code written and tested locally** (`orchestrator/main.py`, `health.py`, `notify.py`, `github_io.py`, `swarms_client.py`, and `.github/workflows/home.yml`, which replaces the S7 test workflow). A local run passes the Swarms check and fails the GitHub token, Progress Reporter and QA Tester checks as expected. **Still needed:** the QA Tester bot, the Progress Reporter and QA Tester "Message me" webhook routines, `GH_TOKEN`, the 8 Actions secrets in home base, then push and comment `/ping`.
 9. Create the three Grok Bot bots with the draft instructions in `PLAN.md` section 4.
 10. Get the **English app details** from him and add them to `PLAN.md`.
 11. Build phases in the order of `PLAN.md` section 13. The cut order if behind: morning digest → bug triage → automatic Vercel import → create project workflow (create the repo by hand) → Design as its own phase.

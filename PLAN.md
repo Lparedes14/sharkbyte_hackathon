@@ -336,7 +336,7 @@ Each phase uses the swarm type that fits the job. This is the core of the "Best 
 
 ### Agent spec format (`orchestrator/agents/*.json`)
 
-Field names come from the Swarms API examples. **Confirm them in setup test S1.**
+Field names are confirmed by S1 (`tests/s1_request.json` has the exact body that worked). The request body also needs a top-level `task` string. S1 showed it is required.
 
 ```json
 {
@@ -349,7 +349,7 @@ Field names come from the Swarms API examples. **Confirm them in setup test S1.*
       "agent_name": "Product Owner",
       "description": "Owns the backlog and acceptance criteria; directs the team",
       "system_prompt": "You are the Product Owner... End your answer with a ```json block matching the schema in the task.",
-      "model_name": "<set after S1>",
+      "model_name": "openrouter/x-ai/grok-4.3",
       "role": "director",
       "max_loops": 1
     }
@@ -376,8 +376,9 @@ Every phase asks for a final ` ```json ` block with a fixed schema. `parsing.py`
 
 ### Models
 
-Choose `model_name` in setup test S1:
-- Try a **Grok model** for some agents, to tie both sponsors together.
+Confirmed in S1:
+- `grok-4` returns 404. Use `openrouter/x-ai/grok-4.3`, which works. The list of valid names is at `GET /v1/models/available`.
+- Use the Grok model for some agents, to tie both sponsors together.
 - Use your strongest available model for the Product Owner, the Architect and the Code Reviewer.
 - Keep the model name in one config value so it's easy to switch.
 
@@ -646,6 +647,12 @@ These decide the final wiring. Write down the result of each one.
 
 ---
 
+**S1 result: passed.** HTTP 200 with text from both agents, using `SequentialWorkflow`. Findings:
+- `grok-4` returns 404. Working model: `openrouter/x-ai/grok-4.3`.
+- The body needs a top-level `task` field.
+- Saved as `tests/s1_request.json` and `tests/s1_response.json`, with no key in either file.
+- Still untested: `HierarchicalSwarm`, `GroupChat`, and `MajorityVoting`. Run them in a follow-up test (S1b) before Block 2.
+
 ## 13. Build timeline
 
 The hackathon has already started. Adjust the blocks to the hours you have left. Sleep is part of the plan.
@@ -741,7 +748,7 @@ The hackathon has already started. Adjust the blocks to the hours you have left.
 
 These come from search results, because the official Swarms, xAI and Cursor doc pages could not be opened during planning. The setup tests in [section 12](#12-setup-tests-do-these-first) settle them.
 
-- Swarms: base URL, request fields (`swarm_type`, `agents[].agent_name`, `model_name`, `role`), response shape, which swarm types the API accepts, Grok model names
+- Swarms: the `role` field, the response shape beyond "text from both agents", and which of `HierarchicalSwarm`, `GroupChat`, `MajorityVoting` the API accepts (S1b). Confirmed by S1: the base URL, the `x-api-key` header, `SequentialWorkflow`, the top-level `task` field, and the Grok model name.
 - Grok Bot: routine webhooks and their payload, posting to GitHub, sending screenshots in chat, launching Cursor Cloud Agents and returning the PR link
 - Cursor Cloud Agents API: exact endpoint and fields (plan B only)
 - Vercel `deployment_status` events for preview and production

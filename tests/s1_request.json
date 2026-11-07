@@ -1,0 +1,21 @@
+{
+  "name": "s1-hello",
+  "swarm_type": "SequentialWorkflow",
+  "task": "Each agent should introduce itself in one short sentence.",
+  "agents": [
+    {
+      "agent_name": "Greeter",
+      "description": "Says hello briefly",
+      "system_prompt": "You are Greeter. Reply in one short sentence that clearly includes the word HELLO_FROM_GREETER.",
+      "model_name": "openrouter/x-ai/grok-4.3",
+      "max_loops": 1
+    },
+    {
+      "agent_name": "Responder",
+      "description": "Acknowledges the greeter",
+      "system_prompt": "You are Responder. Reply in one short sentence that clearly includes the word HELLO_FROM_RESPONDER.",
+      "model_name": "openrouter/x-ai/grok-4.3",
+      "max_loops": 1
+    }
+  ]
+}

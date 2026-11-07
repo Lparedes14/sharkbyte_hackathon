@@ -272,9 +272,9 @@ This is the **Setup routine**. It's the first thing Project Lead does with a new
 |---|---|---|
 | 1 | **Accounts** | You need: a GitHub account; a Swarms account with an API key and credits; Cursor Pro or SuperGrok (for Grok Bot); a Vercel Hobby account. |
 | 2 | **Home base repo** | Open the home base template on GitHub → **Use this template** → name it → create. Send me the link. *(Check: it opens the repo.)* |
-| 3 | **The other two bots** | Create Progress Reporter and QA Tester with the instructions I'll paste. In each bot's routines, copy the **webhook URL**. Also copy mine. *(3 URLs.)* |
+| 3 | **The other two bots** | Create Progress Reporter and QA Tester with the instructions I'll paste. In each bot's routines, copy the **webhook URL and key**. Also copy mine. *(3 URLs and 3 keys.)* |
 | 4 | **GitHub token** | GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate. Access: **All repositories**. Permissions: **Administration, Contents, Pull requests, Issues, Secrets**: read and write; **Actions**: read. Copy it. Don't paste it here. |
-| 5 | **Secrets** | Home base → Settings → **Secrets and variables → Actions** → New repository secret. Add: `SWARMS_API_KEY`, `GH_TOKEN`, `PROJECT_LEAD_WEBHOOK`, `PROGRESS_REPORTER_WEBHOOK`, `QA_TESTER_WEBHOOK`. *(Check: Settings shows 5 secret names.)* |
+| 5 | **Secrets** | Home base → Settings → **Secrets and variables → Actions** → New repository secret. Add: `SWARMS_API_KEY`, `GH_TOKEN`, and for each bot its URL and key: `PROJECT_LEAD_WEBHOOK`, `PROJECT_LEAD_WEBHOOK_KEY`, `PROGRESS_REPORTER_WEBHOOK`, `PROGRESS_REPORTER_WEBHOOK_KEY`, `QA_TESTER_WEBHOOK`, `QA_TESTER_WEBHOOK_KEY`. *(Check: Settings shows 8 secret names.)* |
 | 6 | **Cursor** | Cursor dashboard → connect **GitHub**. On the **Grok Bot** page, make sure **Cloud Agents** is on. If you use Legacy Privacy Mode, switch to a supported data setting. |
 | 7 | **Vercel** | Sign in to Vercel with GitHub so it can see your repos. |
 | 8 | **Health check** | I'll post `/ping` in your home base. If everything works, the orchestrator replies and calls all three bots' webhooks. You'll get "Setup complete ✅". |
@@ -409,7 +409,7 @@ Confirmed in S1:
 **Project template (`agent.yml`):**
 - `issue_comment`: `/run`, `/approve`, `/revise`, `/vote`, `/release`, `/status`
 - `pull_request` (`opened`, `synchronize`): Code Review
-- `deployment_status` (state `success`): "preview ready" or "live", depending on the environment. Sends the URL to QA Tester and Progress Reporter.
+- `status` (context `Vercel`, state `success`): "preview ready" or "live". Vercel creates no GitHub Deployments, so `deployment_status` never fires (S6). The orchestrator reads the preview URL from the `vercel[bot]` comment on the PR and sends it to QA Tester and Progress Reporter.
 - `workflow_dispatch`
 
 ### `agent.yml` sketch (project repo)
@@ -419,7 +419,7 @@ name: agent
 on:
   issue_comment: { types: [created] }
   pull_request: { types: [opened, synchronize] }
-  deployment_status:
+  status:               # Vercel reports through commit statuses, not deployment_status (S6)
   workflow_dispatch:
 
 concurrency:
@@ -457,6 +457,9 @@ jobs:
           PROJECT_LEAD_WEBHOOK: ${{ secrets.PROJECT_LEAD_WEBHOOK }}
           PROGRESS_REPORTER_WEBHOOK: ${{ secrets.PROGRESS_REPORTER_WEBHOOK }}
           QA_TESTER_WEBHOOK: ${{ secrets.QA_TESTER_WEBHOOK }}
+          PROJECT_LEAD_WEBHOOK_KEY: ${{ secrets.PROJECT_LEAD_WEBHOOK_KEY }}
+          PROGRESS_REPORTER_WEBHOOK_KEY: ${{ secrets.PROGRESS_REPORTER_WEBHOOK_KEY }}
+          QA_TESTER_WEBHOOK_KEY: ${{ secrets.QA_TESTER_WEBHOOK_KEY }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_PATH: ${{ github.event_path }}
 ```
@@ -477,6 +480,8 @@ jobs:
 - **Never put secrets in prompts.** Prompts only contain docs, issue text and diffs.
 
 ### Webhook payload to Grok Bot (our own format)
+
+Send it as a `POST` with `Content-Type: application/json` and `Authorization: Bearer <key>`, using the URL and key of the bot you are notifying.
 
 ```json
 {
@@ -562,11 +567,11 @@ The orchestrator only accepts a command that makes sense for the current label.
 
 1. Project Lead launches a Cursor Cloud Agent for `tasks/001-*.md`, then waits for the PR.
 2. PR opened → Code Review swarm → review comment. If it asks for changes, the `changes_requested` webhook goes to Project Lead, which sends a follow-up to the same Cursor agent. **Maximum 2 rounds**, then ask you.
-3. Vercel preview ready (`deployment_status`) → QA Tester tests → `QA RESULT` comment → `/vote`.
+3. Vercel preview ready (`status` event) → QA Tester tests → `QA RESULT` comment → `/vote`.
 4. Release Vote (`MajorityVoting`) → vote table on the PR → `vote_result` to Project Lead → "4/4 Go. Launch?"
 5. You say "Go" → Project Lead posts `/release`.
 6. The Release swarm decides the merge method and writes the CHANGELOG. The orchestrator merges with `GH_TOKEN`, and Vercel deploys production.
-7. Production `deployment_status` → Progress Reporter sends screenshots of the live app, and QA Tester runs a smoke test.
+7. Production `status` event → Progress Reporter sends screenshots of the live app, and QA Tester runs a smoke test.
 8. Next task, or `phase:done`.
 
 ---
@@ -576,6 +581,8 @@ The orchestrator only accepts a command that makes sense for the current label.
 **Main path: Grok Bot launches Cursor Cloud Agents.**
 - This integration exists: in the Cursor dashboard, the Grok Bot page has a team-wide **Cloud Agents** setting, on by default.
 - A Cloud Agent clones the repo in its own VM, writes and runs the code, pushes a branch and opens a PR.
+
+**Where the agents run:** keep Cursor's **Self-hosted machines** and **Enable my machines** settings off, so Cloud Agents run in Cursor's cloud. If you turn them on, agents can run on your own computer, where your `.env` holds your keys. The README repeats this for anyone setting the system up locally.
 
 **What Project Lead sends Cursor for each task:**
 
@@ -613,7 +620,7 @@ The diagram is on the FigJam board ("Credentials Map").
 |---|---|---|
 | `SWARMS_API_KEY` | Home base Actions secret, copied to each project | orchestrator |
 | `GH_TOKEN` (fine-grained) | Home base Actions secret, copied to each project | orchestrator: create repo, copy secrets, merge, read home base |
-| `PROJECT_LEAD_WEBHOOK`, `PROGRESS_REPORTER_WEBHOOK`, `QA_TESTER_WEBHOOK` | Actions secrets. They are secrets: anyone with the URL can trigger your bot. | orchestrator → Grok Bot |
+| `PROJECT_LEAD_WEBHOOK`, `PROGRESS_REPORTER_WEBHOOK`, `QA_TESTER_WEBHOOK`, plus a key for each (`*_WEBHOOK_KEY`) | Actions secrets. They are secrets: anyone with the URL and key can trigger your bot. The key is sent as `Authorization: Bearer <key>`. | orchestrator → Grok Bot |
 | `CURSOR_API_KEY` *(plan B only)* | Actions secret | orchestrator → Cursor |
 | Your GitHub login (for the bots) | Grok Bot secure secrets handoff, never in chat | Project Lead, QA Tester |
 | App keys (database, AI API…) | Vercel environment variables, plus Cursor cloud agent secrets for tests | the English app |
@@ -651,7 +658,30 @@ These decide the final wiring. Write down the result of each one.
 - `grok-4` returns 404. Working model: `openrouter/x-ai/grok-4.3`.
 - The body needs a top-level `task` field.
 - Saved as `tests/s1_request.json` and `tests/s1_response.json`, with no key in either file.
-- Still untested: `HierarchicalSwarm`, `GroupChat`, and `MajorityVoting`. Run them in a follow-up test (S1b) before Block 2.
+- S1b: `HierarchicalSwarm`, `GroupChat` and `MajorityVoting` each returned HTTP 200 with the same request shape (`tests/s1b_swarm_types.py`).
+
+**S2 result: passed.** A `POST` with a JSON body to the "Message me" routine's webhook returned HTTP 200 (`{"success":true,"runUuid":...}`), and Project Lead messaged the payload in the Grok Bot app (`tests/s2_webhook.py`). Findings:
+- Each webhook has a URL and a key. Send the key as `Authorization: Bearer <key>`. A request without the header returns 401.
+- A 200 means the run started. The message arrives a moment later.
+- One routine, "Message me", handles every event by reading the `event` field.
+- Local `.env` names: `PROJECT_LEAD_WEBHOOK`, `PROJECT_LEAD_WEBHOOK_KEY` (stored as `Bearer <key>`) and `PROJECT_LEAD_WEBHOOK_HEADER` (`Authorization`).
+
+**S3 result: passed.** Project Lead signed in to GitHub and, in the test repo `Lparedes14/test_shark_byte`, created issue #1 "S3 test" and the comment "hello from Project Lead". Findings:
+- Both show under the owner's login (`Lparedes14`, labeled Owner), so the "only the owner can run commands" check will pass.
+- GitHub labels the comment "with Cursor". The actions are attributed through Cursor's integration, but the login is still the owner's.
+
+**S4 result: passed.** Project Lead started a Cloud Agent on `Lparedes14/test_shark_byte` and returned the PR link. PR #2 "[task-001] Health page" (branch `cursor/health-page-f3e7`, 2 files, +70) added a small Python server with `GET /health` returning `ok`. The agent ran 2 unit tests and a live request (HTTP 200, body `ok`) and put that evidence in the PR description. Findings:
+- It worked on a personal Premium account. The Cloud Agents page (`grok.com/dashboard/cloud-agents`) has no on/off toggle. Keep **Self-hosted machines** and **Enable my machines** off.
+- The repo needed a first commit on `main`. An empty repo has no branch to start from, so the create-project workflow must create new repos with a README.
+- The PR description appears under the owner's login. GitHub shows 0 checks, because the repo has no workflow yet.
+- Not tested: the "Part of #<issue number>" line in the PR description, and `.cursor/rules` plus a task file as input. The S4 prompt did not include them.
+
+**S5 result: passed.** The second bot, Progress Reporter, opened `Lparedes14/test_shark_byte` PR #2, summarized it in one line and sent a screenshot of the page in the Grok Bot app. It said it made no changes on GitHub, which matches its read-only instructions. Progress Reporter does not have a webhook routine yet. It needs one before the orchestrator can notify it.
+
+**S6 result: passed, with changes to the plan.** `test_shark_byte` is imported in Vercel (Hobby, preset Other, no build settings). PR #3 "[task-002] Static page" (adds `index.html`, description "Part of #1") got a Vercel preview that serves "Hello from test_shark_byte". Findings:
+- Vercel reports with a commit status named `Vercel`, a `Vercel Preview Comments` check, and a comment from `vercel[bot]`. The repo has **no GitHub Deployments**, so **`deployment_status` never fires**. The workflow triggers on the `status` event (context `Vercel`, state success) and reads the preview URL from the bot's PR comment. The comment is `[vc]: #<hash>:<base64>`, and the base64 decodes to JSON with `projects[].previewUrl`. Both are untested inside a workflow.
+- Previews were behind Vercel Authentication (a redirect to a login page), which blocks QA Tester. **Require Log In** is now off in the project's Settings > Deployment Protection, so previews are public to anyone with the URL. For a real product, use Protection Bypass for Automation.
+- The Vercel MCP and agent playbook are not needed. The GitHub integration already builds previews and deploys production on merge.
 
 ## 13. Build timeline
 
@@ -665,7 +695,7 @@ The hackathon has already started. Adjust the blocks to the hours you have left.
 | 😴 **Sleep** | 5–6 | | |
 | **3. Design, Plan, Create project** | 5 | Design + Plan phases → `tasks/*.md` + rules; create project workflow (if behind, create `english-app` by hand) | `english-app` exists with PRD, DESIGN, tasks and rules |
 | **4. Build + Review** | 5 | Project Lead "Build task" routine; `pull_request` → Code Review; fix loop | Cursor opens a PR and the review swarm comments on it |
-| **5. Test + Vote + Release** | 4 | `deployment_status` → QA Tester + Progress Reporter; Release Vote; `/release` → merge | One task goes from PR to production with your "Go" |
+| **5. Test + Vote + Release** | 4 | `status` event → QA Tester + Progress Reporter; Release Vote; `/release` → merge | One task goes from PR to production with your "Go" |
 | 😴 **Sleep** | 5 | | |
 | **6. Feature fast path + dry run** | 4 | `/run feature`; full run on the English app; fix what breaks | "Add a daily vocab quiz" works end to end |
 | **7. Polish + demo** | 3 | Setup routine polish, README, Docs & Pitch output, record the demo, collect screenshots | Demo video recorded |
@@ -748,10 +778,10 @@ The hackathon has already started. Adjust the blocks to the hours you have left.
 
 These come from search results, because the official Swarms, xAI and Cursor doc pages could not be opened during planning. The setup tests in [section 12](#12-setup-tests-do-these-first) settle them.
 
-- Swarms: the `role` field, the response shape beyond "text from both agents", and which of `HierarchicalSwarm`, `GroupChat`, `MajorityVoting` the API accepts (S1b). Confirmed by S1: the base URL, the `x-api-key` header, `SequentialWorkflow`, the top-level `task` field, and the Grok model name.
-- Grok Bot: routine webhooks and their payload, posting to GitHub, sending screenshots in chat, launching Cursor Cloud Agents and returning the PR link
+- Swarms: the `role` field, the response shape beyond "text from both agents", and the output quality of `HierarchicalSwarm`, `GroupChat`, `MajorityVoting` (S1b checked HTTP 200 only). Confirmed by S1: the base URL, the `x-api-key` header, `SequentialWorkflow`, the top-level `task` field, and the Grok model name.
+- Grok Bot: bot-to-bot messaging, and the other two bots' webhook routines. Confirmed by S2 to S5: routine webhooks and their payload, posting issues and comments to GitHub as the owner, launching Cursor Cloud Agents and returning the PR link, and sending screenshots in chat
 - Cursor Cloud Agents API: exact endpoint and fields (plan B only)
-- Vercel `deployment_status` events for preview and production
+- Vercel: S6 showed there are no `deployment_status` events. Still untested: a workflow triggered by the `status` event, parsing the preview URL from the bot comment, and the production deploy after a merge
 
 ---
 

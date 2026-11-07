@@ -683,6 +683,14 @@ These decide the final wiring. Write down the result of each one.
 - Previews were behind Vercel Authentication (a redirect to a login page), which blocks QA Tester. **Require Log In** is now off in the project's Settings > Deployment Protection, so previews are public to anyone with the URL. For a real product, use Protection Bypass for Automation.
 - The Vercel MCP and agent playbook are not needed. The GitHub integration already builds previews and deploys production on merge.
 
+**S7 result: passed.** `.github/workflows/s7-ping.yml` in `sharkbyte_hackathon` runs on `issue_comment`. About a minute after a `/ping` comment on issue #1, `github-actions[bot]` replied "pong - the workflow ran". Findings:
+- The first version failed with "error in your yaml syntax": an unquoted `run:` value contained `: `. Put shell commands in a `run: |` block and keep `: ` out of unquoted values. A broken workflow file shows up as a failed `push` run with 0 jobs, and the workflow is listed by its file path instead of its `name`.
+- `gh` has no checkout in the job, so pass `--repo "$GITHUB_REPOSITORY"`.
+- The owner check (`github.event.comment.user.login == github.repository_owner`) and `startsWith(..., '/ping')` worked. `issue_comment` workflows run from the default branch (`claude/nice-planck-4ptghj`), and an old comment does not re-run after a fix.
+- The reply comes from `GITHUB_TOKEN`, so it does not trigger another run.
+
+**All setup tests (S1 to S7) are done.** Next is Block 1 in section 13.
+
 ## 13. Build timeline
 
 The hackathon has already started. Adjust the blocks to the hours you have left. Sleep is part of the plan.

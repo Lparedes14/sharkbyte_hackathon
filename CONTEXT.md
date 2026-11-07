@@ -2,7 +2,7 @@
 
 Hand-off file for any new chat or for Cursor. It summarizes everything decided, tested and built so far. For the full design, read `PLAN.md`. Where the two disagree, this file has the latest decisions.
 
-Last updated: after setup test S6 passed.
+Last updated: after setup test S7 passed. All setup tests (S1 to S7) are done.
 
 ---
 
@@ -167,6 +167,11 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
    - Vercel reports with a commit status named `Vercel`, a `Vercel Preview Comments` check, and a comment from `vercel[bot]`. The repo has **no GitHub Deployments**, so **no `deployment_status` event fires**. Use the `status` event (context `Vercel`, state success) and read the preview URL from the bot's PR comment. The comment is `[vc]: #<hash>:<base64>`, and the base64 decodes to JSON with `projects[].previewUrl`. Neither is tested inside a workflow yet.
    - Previews were behind Vercel Authentication (a redirect to a login page), which would block QA Tester. He turned off **Require Log In** in the project's Settings > Deployment Protection. Previews are now public to anyone with the URL. For a real product, use Protection Bypass for Automation instead.
    - Cloud Agents add the "Part of #<issue>" line when the prompt asks for it.
+12. **S7 (GitHub Actions answers `/ping`): passed.** `.github/workflows/s7-ping.yml` in `sharkbyte_hackathon` runs on `issue_comment`. About a minute after he commented `/ping` on issue #1, `github-actions[bot]` replied "pong - the workflow ran".
+   - The first version failed with "error in your yaml syntax": an unquoted `run:` value contained `: `. Put shell commands in a `run: |` block and keep `: ` out of unquoted values. A broken workflow file shows up as a failed `push` run with 0 jobs, and the workflow is listed by its file path instead of its `name`.
+   - `gh` has no checkout in the job, so pass `--repo "$GITHUB_REPOSITORY"`.
+   - The owner check (`github.event.comment.user.login == github.repository_owner`) and `startsWith(..., '/ping')` worked. `issue_comment` workflows run from the default branch (`claude/nice-planck-4ptghj`), and an old comment does not re-run after a fix.
+   - The reply comes from `GITHUB_TOKEN`, so it does not trigger another run.
 
 ## 13. What is not done yet (next steps, in order)
 
@@ -176,7 +181,7 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 4. **S4: done** (see section 12).
 5. **S5: done** (see section 12).
 6. **S6: done** (see section 12). The trigger is the `status` event, not `deployment_status`.
-7. **S7:** minimal GitHub Actions workflow that answers `/ping`.
+7. **S7: done** (see section 12).
 8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete".
 9. Create the three Grok Bot bots with the draft instructions in `PLAN.md` section 4.
 10. Get the **English app details** from him and add them to `PLAN.md`.

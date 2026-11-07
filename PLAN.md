@@ -689,7 +689,9 @@ These decide the final wiring. Write down the result of each one.
 - The owner check (`github.event.comment.user.login == github.repository_owner`) and `startsWith(..., '/ping')` worked. `issue_comment` workflows run from the default branch (`claude/nice-planck-4ptghj`), and an old comment does not re-run after a fix.
 - The reply comes from `GITHUB_TOKEN`, so it does not trigger another run.
 
-**All setup tests (S1 to S7) are done.** Next is Block 1 in section 13.
+**All setup tests (S1 to S7) are done.**
+
+**Block 1 result: done.** The orchestrator skeleton is in `orchestrator/` with `home.yml`. A `/ping` comment on issue #1 returned a health-check table with every row ✅ (Swarms key, GitHub token and all three webhooks) and "Setup complete ✅", and the three bots each messaged the user. The `GH_TOKEN` fine-grained token needed **All repositories** access, not "Public repositories", for its write permissions to apply. Next is Block 2 in section 13.
 
 ## 13. Build timeline
 

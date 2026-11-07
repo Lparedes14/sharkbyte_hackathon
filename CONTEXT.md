@@ -2,7 +2,7 @@
 
 Hand-off file for any new chat or for Cursor. It summarizes everything decided, tested and built so far. For the full design, read `PLAN.md`. Where the two disagree, this file has the latest decisions.
 
-Last updated: after setup test S7 passed. All setup tests (S1 to S7) are done.
+Last updated: after Block 1 passed. All setup tests (S1 to S7) are done, and `/ping` on GitHub returns "Setup complete ✅".
 
 ---
 
@@ -182,8 +182,8 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 5. **S5: done** (see section 12).
 6. **S6: done** (see section 12). The trigger is the `status` event, not `deployment_status`.
 7. **S7: done** (see section 12).
-8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete". **Code written and tested locally** (`orchestrator/main.py`, `health.py`, `notify.py`, `github_io.py`, `swarms_client.py`, and `.github/workflows/home.yml`, which replaces the S7 test workflow). A local run passes the Swarms check and fails the GitHub token, Progress Reporter and QA Tester checks as expected. **Still needed:** the QA Tester bot, the Progress Reporter and QA Tester "Message me" webhook routines, `GH_TOKEN`, the 8 Actions secrets in home base, then push and comment `/ping`.
-9. Create the three Grok Bot bots with the draft instructions in `PLAN.md` section 4.
+8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete". **Code written and tested locally** (`orchestrator/main.py`, `health.py`, `notify.py`, `github_io.py`, `swarms_client.py`, and `.github/workflows/home.yml`, which replaces the S7 test workflow). **Block 1 is done:** all three bots have a "Message me" webhook routine, the 8 Actions secrets are set in home base, and a `/ping` comment on issue #1 returned "Setup complete ✅" (Swarms key, GitHub token and all three webhooks answered). Note: the `GH_TOKEN` fine-grained token needed **All repositories** access (not "Public repositories") for its write permissions to apply.
+9. **Done:** the three Grok Bot bots exist with their instructions from `PLAN.md` section 4.
 10. Get the **English app details** from him and add them to `PLAN.md`.
 11. Build phases in the order of `PLAN.md` section 13. The cut order if behind: morning digest → bug triage → automatic Vercel import → create project workflow (create the repo by hand) → Design as its own phase.
 

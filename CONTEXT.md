@@ -122,6 +122,7 @@ Commands are GitHub issue/PR comments that start with `/`. Only the repo owner c
 |---|---|
 | `SWARMS_API_KEY`, `GH_TOKEN` (fine-grained), 3 Grok Bot webhook URLs plus one key per webhook (sent as `Authorization: Bearer <key>`, stored as `*_WEBHOOK_KEY`) | GitHub Actions secrets in home base, copied into each project repo on creation |
 | `CURSOR_API_KEY` (plan B only) | Actions secret |
+| `VERCEL_TOKEN` (one per account, covers every project) | Home base Actions secret only, never copied to project repos. `/build` uses it to create each repo's Vercel project and turn off Require Log In. |
 | His GitHub login for the bots | Grok Bot secure handoff, never in chat |
 | App keys | Vercel environment variables, plus Cursor cloud agent secrets for tests |
 | Local copy | `.env` (in `.gitignore`), plus `.env.example` with names only |
@@ -196,7 +197,9 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 8c. **`/build` (create project) and the setup guide: code written and tested offline, not yet run on GitHub.**
    - `orchestrator/build.py`: on an Idea Inbox issue, `/build <name> public|private` creates the repo with a README, copies `template/` and writes `docs/IDEA.md`, copies the 8 secrets (sealed with PyNaCl), opens the project issue, adds the repo to `projects.json` (so `home.yml` now has `contents: write`), and posts `/run discovery` with `GH_TOKEN` so Deep Dive starts. It reports on the idea issue and sends Project Lead a `repo_created` webhook with the Vercel steps.
    - `docs/SETUP.md`: first-time setup, new project, things only the human can do, how to talk to Project Lead, and the new Project Lead instructions.
-   - **Needs from him:** add **Workflows: Read and write** to the `GH_TOKEN` fine-grained token (needed to write the workflow file into new repos), and paste the new Project Lead instructions from `docs/SETUP.md` Part 5.
+   - Pushed as `05d2449`.
+   - **Vercel, Option B (decided):** `orchestrator/vercel.py` uses one `VERCEL_TOKEN` to create a Vercel project per repo (linked to it) and turn off Require Log In, inside `/build`. Without the token, or if Vercel cannot see the repo, `/build` falls back to the manual Vercel steps for Project Lead. `/ping` has a "Vercel token" row. `docs/SETUP.md` Part 1 now includes the Vercel GitHub app with **All repositories** (step 6), the Vercel token (step 7) and 9 home base secrets (step 8). The Vercel API calls are **not tested yet**; they wait for his token.
+   - **Needs from him:** add **Workflows: Read and write** to the `GH_TOKEN` fine-grained token (needed to write the workflow file into new repos), create the Vercel token and add it to `.env` and the home base secrets, and paste the new Project Lead instructions from `docs/SETUP.md` Part 5.
 9. **Done:** the three Grok Bot bots exist with their instructions from `PLAN.md` section 4.
 10. **Decided:** the English app is the test product from Block 2 on. **Version 1, in his words: vocabulary flashcards by topic that he can track every day.** Keep it tiny and easy to extend; later features come through Project Lead. Its repo for now is `test_shark_byte` (`projects.json` key `english-app`). Its data lives in **Supabase (Postgres)**, the Architect default (Next.js + Supabase on Vercel): the Design phase writes the data model into `docs/DESIGN.md`, Cursor agents write the SQL migrations, and the Supabase keys go in Vercel environment variables. The build system itself needs no database: the repos (issues, labels, `docs/*.md`, PRs) are its memory.
 11. Build phases in the order of `PLAN.md` section 13. The cut order if behind: morning digest → bug triage → automatic Vercel import → create project workflow (create the repo by hand) → Design as its own phase.

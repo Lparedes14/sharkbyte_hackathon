@@ -623,6 +623,7 @@ The diagram is on the FigJam board ("Credentials Map").
 | `GH_TOKEN` (fine-grained) | Home base Actions secret, copied to each project | orchestrator: create repo, copy secrets, merge, read home base |
 | `PROJECT_LEAD_WEBHOOK`, `PROGRESS_REPORTER_WEBHOOK`, `QA_TESTER_WEBHOOK`, plus a key for each (`*_WEBHOOK_KEY`) | Actions secrets. They are secrets: anyone with the URL and key can trigger your bot. The key is sent as `Authorization: Bearer <key>`. | orchestrator → Grok Bot |
 | `CURSOR_API_KEY` *(plan B only)* | Actions secret | orchestrator → Cursor |
+| `VERCEL_TOKEN` | Home base Actions secret only (never copied to project repos) | orchestrator: `/build` creates each repo's Vercel project and turns off Require Log In |
 | Your GitHub login (for the bots) | Grok Bot secure secrets handoff, never in chat | Project Lead, QA Tester |
 | App keys (database, AI API…) | Vercel environment variables, plus Cursor cloud agent secrets for tests | the English app |
 | Local copies | `.env` on your laptop (in `.gitignore`), plus `.env.example` committed with names only | you, testing locally |

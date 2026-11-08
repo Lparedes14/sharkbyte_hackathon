@@ -7,8 +7,9 @@ Everything the GitHub API allows happens here, with GH_TOKEN:
   4. open the project issue and add the repo to projects.json in home base
   5. comment "/run discovery" on the project issue, which starts Deep Dive there
 
-What GitHub cannot do (Vercel import, Vercel protection, Supabase) comes back as a checklist.
-Project Lead does those steps in its browser when it can, and asks the human only when it can't.
+With VERCEL_TOKEN set, it also creates the project's Vercel project and turns off Require Log In
+(vercel.py). Anything it cannot do comes back as a checklist; Project Lead does those steps in
+its browser when it can, and asks the human only when it can't.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pathlib import Path
 from nacl import encoding, public
 
 import github_io
+import vercel
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 SECRET_NAMES = (
@@ -142,6 +144,18 @@ def create_project(
             break
         time.sleep(2)
 
+    # Vercel first, so the template commits below already trigger its first deployment.
+    if vercel.token():
+        try:
+            vercel_name = vercel.link_repo(full)
+            result.done.append(
+                f"Created the Vercel project '{vercel_name}' linked to the repo, with Require Log In off"
+            )
+        except vercel.VercelError as exc:
+            result.human_steps += [f"The automatic Vercel step failed ({exc}). Do it by hand:"] + manual_vercel_steps(full)
+    else:
+        result.human_steps += ["VERCEL_TOKEN is not set, so Vercel needs doing by hand:"] + manual_vercel_steps(full)
+
     # 2. Template files and the idea.
     for path, text in template_files().items():
         try:
@@ -196,13 +210,15 @@ def create_project(
     time.sleep(WORKFLOW_SETTLE_SECONDS)
     github_io.post_command(full, issue["number"], "/run discovery", token)
     result.done.append("Started Deep Dive on the project issue (the PRD arrives in about 2 minutes)")
+    return result
 
-    result.human_steps += [
+
+def manual_vercel_steps(full: str) -> list[str]:
+    return [
         f"Vercel: Add New, then Project, import {full}, then Deploy (no build settings needed yet).",
         "Vercel: in that project's Settings, then Deployment Protection, turn off Require Log In, "
         "so QA Tester can open the previews.",
     ]
-    return result
 
 
 def report(result: BuildResult) -> str:
@@ -214,9 +230,12 @@ def report(result: BuildResult) -> str:
         "**Done automatically**",
     ]
     lines += [f"- ✅ {d}" for d in result.done]
-    lines += [
-        "",
-        "**Steps that need a browser sign-in** (Project Lead tries these itself first, and asks you only if it can't)",
-    ]
-    lines += [f"{i}. {s}" for i, s in enumerate(result.human_steps, 1)]
+    if result.human_steps:
+        lines += [
+            "",
+            "**Steps that need a browser sign-in** (Project Lead tries these itself first, and asks you only if it can't)",
+        ]
+        lines += [f"- {s}" for s in result.human_steps]
+    else:
+        lines += ["", "Nothing needs you right now. The PRD comes next for your approval."]
     return "\n".join(lines)

@@ -10,8 +10,9 @@ import requests
 import github_io
 import notify
 import swarms_client
+import vercel
 
-PLAN_STEPS = "PLAN.md section 5"
+SETUP = "docs/SETUP.md Part 1"
 
 
 @dataclass
@@ -53,12 +54,12 @@ def check_swarms() -> Result:
             _ping_spec(), "Each agent should say hello in one short sentence.", timeout=120
         )
     except swarms_client.SwarmsError as exc:
-        return Result("Swarms key", False, str(exc), f"{PLAN_STEPS}, step 5")
+        return Result("Swarms key", False, str(exc), f"{SETUP}, steps 1 and 8")
     return Result("Swarms key", True, "tiny 2-agent call returned HTTP 200")
 
 
 def check_github() -> Result:
-    fix = f"{PLAN_STEPS}, steps 4 and 5"
+    fix = f"{SETUP}, steps 5 and 8"
     token = os.environ.get("GH_TOKEN", "").strip()
     repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
     if not token:
@@ -90,11 +91,16 @@ def check_github() -> Result:
     return Result("GitHub token", True, f"signed in as {login}; can read the repo; Secrets permission works")
 
 
+def check_vercel() -> Result:
+    ok, detail = vercel.check()
+    return Result("Vercel token", ok, detail, "" if ok else f"{SETUP}, steps 6, 7 and 8")
+
+
 def check_webhook(prefix: str, payload: dict | None) -> Result:
     """Send the payload (or only check the settings when payload is None)."""
     label = notify.BOTS[prefix]
     name = f"{label} webhook"
-    fix = f"{PLAN_STEPS}, steps 3 and 5"
+    fix = f"{SETUP}, steps 3, 4 and 8"
 
     missing = notify.missing_settings(prefix)
     if missing:
@@ -112,6 +118,7 @@ def run_all(repo: str, link: str, send_webhooks: bool) -> list[Result]:
         Result("Workflow", True, "the orchestrator started"),
         check_swarms(),
         check_github(),
+        check_vercel(),
     ]
 
     def payload(summary: str, question: str = "") -> dict | None:

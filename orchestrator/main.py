@@ -226,15 +226,15 @@ def cmd_build(ctx: Ctx, args: str) -> None:
     state.add(ctx.repo, ctx.number, ctx.labels, "built")
     state.set_status(ctx.repo, ctx.number, ctx.labels, None)
 
-    steps = " ".join(f"({i}) {s}" for i, s in enumerate(result.human_steps, 1))
-    payload = notify.make_payload(
-        "repo_created",
-        result.repo,
-        result.url,
-        f"Created {result.repo} and started Deep Dive; the PRD arrives in about 2 minutes. "
-        f"Steps that need a browser sign-in: {steps}",
-        "Do the Vercel steps yourself if you can; otherwise tell me exactly what to click.",
-    )
+    summary = f"Created {result.repo}, linked it to Vercel and started Deep Dive; the PRD arrives in about 2 minutes."
+    question = ""
+    if result.human_steps:
+        summary = (
+            f"Created {result.repo} and started Deep Dive; the PRD arrives in about 2 minutes. "
+            "Steps that need a browser sign-in: " + " ".join(result.human_steps)
+        )
+        question = "Do these steps yourself if you can; otherwise tell me exactly what to click."
+    payload = notify.make_payload("repo_created", result.repo, result.url, summary, question)
     ok, detail = notify.send("PROJECT_LEAD", payload)
     print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
 

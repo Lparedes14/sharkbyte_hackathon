@@ -11,6 +11,7 @@ Local runs, for development:
   python orchestrator/main.py --local                         health check, sends nothing
   python orchestrator/main.py --local-run idea_lab "<idea>"   prints the score card
   python orchestrator/main.py --local-run discovery "<idea>"  prints the PRD files
+  python orchestrator/main.py --local-run design <PRD file>   prints the design file
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ import github_io
 import health
 import notify
 import state
-from phases import discovery, idea_lab
+from phases import design, discovery, idea_lab
 from phases.common import PhaseError, PhaseResult
 from swarms_client import SwarmsError
 
@@ -162,14 +163,29 @@ def run_discovery(ctx: Ctx, feedback: str | None) -> None:
     run_phase(ctx, work)
 
 
+def run_design(ctx: Ctx, feedback: str | None) -> None:
+    def work() -> PhaseResult:
+        prd, _ = github_io.get_file(ctx.repo, "docs/PRD.md", ctx.branch)
+        previous = None
+        if feedback:
+            previous, _ = github_io.get_file(ctx.repo, "docs/DESIGN.md", ctx.branch)
+        return design.run(
+            prd or "", f"issue #{ctx.number}", issue_context(ctx), feedback, previous
+        )
+
+    run_phase(ctx, work)
+
+
 def cmd_run(ctx: Ctx, args: str) -> None:
     which = args.split()[0].lower() if args else ""
     if which == "discovery":
         run_discovery(ctx, feedback=None)
-    elif which in ("feature", "design", "plan"):
-        ctx.comment(f"The `{which}` phase is not built yet. Available now: `/run discovery`.")
+    elif which == "design":
+        run_design(ctx, feedback=None)
+    elif which in ("feature", "plan"):
+        ctx.comment(f"The `{which}` phase is not built yet. Available now: `/run discovery`, `/run design`.")
     else:
-        ctx.comment("Tell me which phase to run, for example `/run discovery`.")
+        ctx.comment("Tell me which phase to run, for example `/run discovery` or `/run design`.")
 
 
 def cmd_approve(ctx: Ctx, args: str) -> None:
@@ -184,11 +200,16 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
         return
     phase = state.phase(ctx.labels)
     if phase == "discovery":
+        ctx.comment("PRD approved. Starting the Design phase now; the design arrives in about 2 minutes.")
         state.set_phase(ctx.repo, ctx.number, ctx.labels, "design")
+        run_design(ctx, feedback=None)
+        return
+    if phase == "design":
+        state.set_phase(ctx.repo, ctx.number, ctx.labels, "plan")
         state.set_status(ctx.repo, ctx.number, ctx.labels, None)
         ctx.comment(
-            "PRD approved. This issue moves to the Design phase. "
-            "Design is not built yet (Block 3), so nothing runs now."
+            "Design and scope approved. This issue moves to the Plan phase. "
+            "Plan is not built yet, so nothing runs now."
         )
         return
     ctx.comment(f"Approval for the `{phase}` phase is not built yet.")
@@ -205,6 +226,8 @@ def cmd_revise(ctx: Ctx, args: str) -> None:
         cmd_score(ctx, args)
     elif state.phase(ctx.labels) == "discovery":
         run_discovery(ctx, feedback=args)
+    elif state.phase(ctx.labels) == "design":
+        run_design(ctx, feedback=args)
     else:
         ctx.comment(f"Revising the `{state.phase(ctx.labels)}` phase is not built yet.")
 
@@ -337,8 +360,12 @@ def run_local_phase(name: str, idea: str) -> int:
         result = idea_lab.run(idea)
     elif name == "discovery":
         result = discovery.run(idea, "a local run")
+    elif name == "design":
+        # the "idea" text is the PRD (or a path to a PRD file)
+        path = Path(idea)
+        result = design.run(path.read_text(encoding="utf-8") if path.is_file() else idea, "a local run")
     else:
-        print("Use idea_lab or discovery.")
+        print("Use idea_lab, discovery or design.")
         return 2
     print(result.comment)
     for path, text in result.files.items():

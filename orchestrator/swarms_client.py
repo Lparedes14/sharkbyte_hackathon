@@ -21,7 +21,7 @@ GATEWAY_LIMIT_SECONDS = 25
 LOGS_PATH = "/v1/account/logs"
 POLL_SECONDS = 10
 AGENTS_DIR = Path(__file__).resolve().parent / "agents"
-SPEC_KEYS = ("name", "description", "swarm_type", "agents")
+SPEC_KEYS = ("name", "description", "swarm_type", "agents", "max_loops", "list_all_agents")
 
 
 class SwarmsError(Exception):

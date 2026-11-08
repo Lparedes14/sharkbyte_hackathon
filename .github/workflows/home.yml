@@ -31,6 +31,7 @@ jobs:
       - name: Run the orchestrator
         run: python orchestrator/main.py
         env:
+          ORCH_CONTEXT: home
           SWARMS_API_KEY: ${{ secrets.SWARMS_API_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,3 +41,10 @@ jobs:
           PROGRESS_REPORTER_WEBHOOK_KEY: ${{ secrets.PROGRESS_REPORTER_WEBHOOK_KEY }}
           QA_TESTER_WEBHOOK: ${{ secrets.QA_TESTER_WEBHOOK }}
           QA_TESTER_WEBHOOK_KEY: ${{ secrets.QA_TESTER_WEBHOOK_KEY }}
+      - name: Save the raw agent output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-output
+          path: .orchestrator-runs/
+          if-no-files-found: ignore

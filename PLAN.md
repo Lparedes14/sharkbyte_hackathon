@@ -381,6 +381,7 @@ Confirmed in S1:
 - Use the Grok model for some agents, to tie both sponsors together.
 - Use your strongest available model for the Product Owner, the Architect and the Code Reviewer.
 - Keep the model name in one config value so it's easy to switch.
+- Block 2 update: the default is now `openrouter/x-ai/grok-4.20` (`SWARMS_MODEL` overrides it). `grok-4.3` is too slow for the Swarms gateway, which answers 503 after about 30 seconds. The swarm keeps running after that 503, so `swarms_client.py` recovers the result from `/v1/account/logs` and `/v1/job/{job_id}` instead of retrying.
 
 ---
 
@@ -691,7 +692,9 @@ These decide the final wiring. Write down the result of each one.
 
 **All setup tests (S1 to S7) are done.**
 
-**Block 1 result: done.** The orchestrator skeleton is in `orchestrator/` with `home.yml`. A `/ping` comment on issue #1 returned a health-check table with every row ✅ (Swarms key, GitHub token and all three webhooks) and "Setup complete ✅", and the three bots each messaged the user. The `GH_TOKEN` fine-grained token needed **All repositories** access, not "Public repositories", for its write permissions to apply. Next is Block 2 in section 13.
+**Block 1 result: done.** The orchestrator skeleton is in `orchestrator/` with `home.yml`. A `/ping` comment on issue #1 returned a health-check table with every row ✅ (Swarms key, GitHub token and all three webhooks) and "Setup complete ✅", and the three bots each messaged the user. The `GH_TOKEN` fine-grained token needed **All repositories** access, not "Public repositories", for its write permissions to apply.
+
+**Block 2 result: code done and tested locally; the GitHub run is next.** Decided: Claude Code writes the orchestrator code, Cursor Cloud Agents write the product code, and the English app is the test product. Added `parsing.py`, `state.py`, `phases/` (Idea Lab, Deep Dive), agent specs (`idea_lab.json`, `deep_dive.json`, and `formatter.json` in place of `single.json`), and `template/.github/workflows/agent.yml`. Locally, the Idea Lab scored the English app idea 6.8/10 with 6 open questions, and Deep Dive wrote a PRD with 4 user stories and 15 acceptance criteria. Findings: every swarm type returns `output` as a list of `{role, content}`; `HierarchicalSwarm` adds its own `Director`, so the parser searches every answer for the PRD JSON and falls back to the Formatter; the gateway's 30-second limit is handled by recovering the finished job (see Models in section 6).
 
 ## 13. Build timeline
 

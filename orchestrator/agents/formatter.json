@@ -1,0 +1,12 @@
+{
+  "name": "formatter",
+  "description": "Turns free-text agent output into the JSON a phase needs (fallback only)",
+  "swarm_type": "SequentialWorkflow",
+  "agents": [
+    {
+      "agent_name": "Formatter",
+      "description": "Converts text into JSON that matches a schema",
+      "system_prompt": "You convert text into exactly one JSON object that matches the schema in the task. Use only information that is in the text; leave a list empty when the text has nothing for it. Output only one fenced ```json block and nothing else."
+    }
+  ]
+}

@@ -26,7 +26,7 @@ The Swarms prize is the main target, so **every agent that thinks must run in Sw
 - He wants **no space or launch theme**. Use plain, normal names.
 - No UI for now. The interface is the Grok Bot app, GitHub and screenshots.
 - Approval gates are required. Decisions go through a human in Grok Bot.
-- **Cursor writes the code.** He builds `orchestrator/` himself in Cursor's Agent mode. This keeps the "Cursor as core coding agent" claim true. Claude Code in the cloud only writes planning docs, prompts and diagrams. Do not write the orchestrator code for him unless he asks. He asked once: the Block 1 skeleton (`orchestrator/`, `home.yml`, `requirements.txt`, `projects.json`) was written in Claude Code because his Cursor tokens were limited. State this accurately in the submission, and keep using Cursor for later blocks where he can.
+- **Cursor writes the code.** He builds `orchestrator/` himself in Cursor's Agent mode. This keeps the "Cursor as core coding agent" claim true. Claude Code in the cloud only writes planning docs, prompts and diagrams. Do not write the orchestrator code for him unless he asks. **Update:** he decided that Claude Code writes all the orchestrator code (Block 1 onward), because his Cursor tokens are limited. Cursor Cloud Agents still write all the product code (the English app) through Project Lead. State this split accurately in the submission.
 - Never ask him to paste secrets into a chat. Keys live in `.env` (gitignored) locally and in GitHub Actions secrets.
 - Keep Cursor's **Self-hosted machines** and **Enable my machines** settings off, so Cloud Agents run in Cursor's cloud and never on his laptop, where `.env` lives.
 - Keep answers short and practical. Ask before irreversible actions (creating repos, merging, deleting).
@@ -133,6 +133,8 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 - Use `GITHUB_TOKEN` for comments and labels in the current repo. Use `GH_TOKEN` only for creating repos, copying secrets, merging, and reading home base.
 - One `concurrency` group per issue or PR. Swarms calls get a timeout (about 10 minutes), 2 retries, and the raw response saved as an artifact.
 - Never log secrets.
+- **Swarms model:** `openrouter/x-ai/grok-4.20` (set `SWARMS_MODEL` to change it). `grok-4.3` is too slow, and the "fast" `xai/` and `oci/` Grok names returned no usable JSON.
+- **Swarms 30-second gateway limit:** `/v1/swarm/completions` answers 503 "Service Unavailable" after about 30 s, but the swarm keeps running and its result is stored. `swarms_client.py` gives each call a unique swarm name and, after a slow 503, polls `/v1/account/logs` for that name and fetches the result with `GET /v1/job/{job_id}` (no re-run, no double billing). Quick 502/503/504 answers are retried. `stream: true` does not help: the gateway buffers the stream and still cuts it at 30 s, and streamed jobs are stored without their output.
 
 ## 12. What has been done
 
@@ -183,8 +185,14 @@ Never put secrets in Swarms prompts, because agent output is committed to a publ
 6. **S6: done** (see section 12). The trigger is the `status` event, not `deployment_status`.
 7. **S7: done** (see section 12).
 8. **Block 1 (skeleton):** repo layout, `requirements.txt`, secrets, `home.yml`, `/ping` round trip → "Setup complete". **Code written and tested locally** (`orchestrator/main.py`, `health.py`, `notify.py`, `github_io.py`, `swarms_client.py`, and `.github/workflows/home.yml`, which replaces the S7 test workflow). **Block 1 is done:** all three bots have a "Message me" webhook routine, the 8 Actions secrets are set in home base, and a `/ping` comment on issue #1 returned "Setup complete ✅" (Swarms key, GitHub token and all three webhooks answered). Note: the `GH_TOKEN` fine-grained token needed **All repositories** access (not "Public repositories") for its write permissions to apply.
+8b. **Block 2 (Idea Lab + Deep Dive): code written, tested locally against the real Swarms API, not yet run on GitHub.**
+   - Files: `orchestrator/parsing.py`, `state.py`, `phases/common.py`, `phases/idea_lab.py`, `phases/discovery.py`, agent specs in `orchestrator/agents/` (`idea_lab.json`, `deep_dive.json`, `formatter.json`), the expanded `github_io.py` and `main.py`, and `template/.github/workflows/agent.yml` (the thin trigger for project repos, with `ORCH_CONTEXT=project`). `home.yml` sets `ORCH_CONTEXT=home`. Both upload `.orchestrator-runs/` (raw Swarms responses) as an artifact.
+   - Commands: home base takes `/ping`, `/score`, `/revise`, `/approve`; project repos take `/ping`, `/run discovery`, `/approve`, `/revise "<feedback>"`. `/approve` on a PRD moves the issue to `phase:design` (Design itself is Block 3).
+   - Local results with the English app idea: Idea Lab scored it 6.8/10 in 13 s with 6 open questions; Deep Dive wrote "VocabVida" with 4 user stories and 15 acceptance criteria in 25 s.
+   - Local dev commands: `python orchestrator/main.py --local-run idea_lab "<idea>"` and `--local-run discovery "<idea>"` print the result and post nothing.
+   - **Next:** create the `english-app` repo (with a README), copy `template/.github/workflows/agent.yml` into it, copy the 8 secrets, open a project issue with the idea, comment `/run discovery`, then approve through Project Lead.
 9. **Done:** the three Grok Bot bots exist with their instructions from `PLAN.md` section 4.
-10. Get the **English app details** from him and add them to `PLAN.md`.
+10. **Decided:** the English app is the test product from Block 2 on. Keep it tiny and easy to extend; he will add details as features through Project Lead. Its data lives in **Supabase (Postgres)**, the Architect default (Next.js + Supabase on Vercel): the Design phase writes the data model into `docs/DESIGN.md`, Cursor agents write the SQL migrations, and the Supabase keys go in Vercel environment variables. The build system itself needs no database: the repos (issues, labels, `docs/*.md`, PRs) are its memory.
 11. Build phases in the order of `PLAN.md` section 13. The cut order if behind: morning digest → bug triage → automatic Vercel import → create project workflow (create the repo by hand) → Design as its own phase.
 
 Fallbacks if a test fails: polling instead of Grok Bot webhooks; the Cursor Cloud Agents API from the orchestrator instead of Grok Bot launching agents; he posts commands himself instead of Grok Bot.
@@ -192,6 +200,8 @@ Fallbacks if a test fails: polling instead of Grok Bot webhooks; the Cursor Clou
 ## 14. What is verified and what is not
 
 **Verified by S1 and S1b:** Swarms base URL and `x-api-key`, `SequentialWorkflow`, `HierarchicalSwarm`, `GroupChat` and `MajorityVoting` (all HTTP 200), the `task` field, the Grok model name, and that `/v1/models/available` lists models.
+
+**Verified in Block 2:** every swarm type returns `"output": [{"role": "<agent name>", "content": "<text>"}]`. `ConcurrentWorkflow` gives one entry per agent. `HierarchicalSwarm` adds its own built-in `Director` (and `System` entries) that orders the agents, so the agent we call the director does not automatically go last; the parser skips `System`/`Director` and searches every answer for the JSON. A one-agent `SequentialWorkflow` works (used by the Formatter). The optional `role` field is not needed.
 
 **Not verified.** These came from web search, because the Claude Code cloud session could not open the official Swarms, xAI or Cursor docs pages (the network blocked them). Treat as claims to test:
 - Swarms: the `role` field, `MultiAgentRouter` behavior, the output quality of `HierarchicalSwarm`, `GroupChat` and `MajorityVoting` (S1b checked HTTP status only), and response shapes.

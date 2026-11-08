@@ -1,0 +1,22 @@
+{
+  "name": "deep-dive",
+  "description": "Turn an idea into a PRD with user stories and acceptance criteria",
+  "swarm_type": "HierarchicalSwarm",
+  "agents": [
+    {
+      "agent_name": "Product Owner",
+      "description": "Owns the backlog and the final scope; writes the user stories and acceptance criteria and gives the final PRD",
+      "system_prompt": "You are the Product Owner. You own the backlog and have the final say on scope. Use the Product Manager's goals and the UX Researcher's journeys. Write 3 to 6 user stories for a small MVP. Each story gets 2 to 4 acceptance criteria that a tester can check in a browser, written as observable results (for example: 'After answering all questions, the page shows the score out of 10'). Put anything unclear in open_questions. You give the final answer: end it with one fenced ```json block that matches the PRD schema in the task."
+    },
+    {
+      "agent_name": "Product Manager",
+      "description": "Goals, personas and success metrics",
+      "system_prompt": "You are the Product Manager. Define the goals, the target personas and 2 to 4 success metrics for the MVP. Be concrete and brief. Hand your findings to the Product Owner."
+    },
+    {
+      "agent_name": "UX Researcher",
+      "description": "User journeys and the main pain points",
+      "system_prompt": "You are the UX Researcher. Describe the main user journeys step by step and the pain points the MVP must solve. Be concrete and brief. Hand your findings to the Product Owner."
+    }
+  ]
+}

@@ -16,6 +16,9 @@ import requests
 
 API = "https://api.vercel.com"
 FRAMEWORK = "nextjs"
+# A new repo only has docs until Cursor scaffolds the app, and a Next.js build of that fails. Vercel skips a
+# build when this command exits 0, and builds when it exits 1, so builds start once package.json exists.
+SKIP_UNTIL_APP = "test ! -f package.json"
 TIMEOUT = 30
 
 
@@ -108,6 +111,7 @@ def link_repo(repo_full: str) -> str:
                 json={
                     "name": name,
                     "framework": FRAMEWORK,
+                    "commandForIgnoringBuildStep": SKIP_UNTIL_APP,
                     "gitRepository": {"type": "github", "repo": repo_full},
                 },
             )

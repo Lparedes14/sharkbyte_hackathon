@@ -105,6 +105,62 @@ def get_file(repo: str, path: str, ref: str, token: str | None = None) -> tuple[
     return text, data.get("sha")
 
 
+def create_repo(name: str, private: bool, description: str, token: str) -> dict:
+    """Create a repo for the token's user, with a README so it has a default branch."""
+    resp = requests.post(
+        API + "/user/repos",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+        json={"name": name, "private": private, "auto_init": True, "description": description[:350]},
+    )
+    if resp.status_code == 422:
+        raise GitHubError(f"a repository named '{name}' already exists or the name is not allowed")
+    if resp.status_code in (401, 403, 404):
+        raise GitHubError(
+            f"GH_TOKEN cannot create repositories (HTTP {resp.status_code}); it needs "
+            "All repositories access and Administration: Read and write"
+        )
+    if resp.status_code != 201:
+        raise GitHubError(f"POST /user/repos returned HTTP {resp.status_code}")
+    return resp.json()
+
+
+def branch_exists(repo: str, branch: str, token: str | None = None) -> bool:
+    resp = _request("GET", f"/repos/{repo}/branches/{quote(branch, safe='')}", token, ok=(200, 404))
+    return resp.status_code == 200
+
+
+def create_issue(repo: str, title: str, body: str, token: str | None = None) -> dict:
+    return _request(
+        "POST", f"/repos/{repo}/issues", token, ok=(201,), json={"title": title, "body": body}
+    ).json()
+
+
+# Commands the orchestrator may post on purpose, with GH_TOKEN, to start a workflow in another
+# repo (events made with GITHUB_TOKEN never start workflows). Nothing else may start with '/'.
+ALLOWED_COMMANDS = ("/run discovery",)
+
+
+def post_command(repo: str, issue_number: int, command: str, token: str) -> None:
+    if command not in ALLOWED_COMMANDS:
+        raise ValueError(f"the orchestrator may not post '{command}'")
+    _request("POST", f"/repos/{repo}/issues/{issue_number}/comments", token, ok=(201,), json={"body": command})
+
+
+def secrets_public_key(repo: str, token: str) -> dict:
+    return _request("GET", f"/repos/{repo}/actions/secrets/public-key", token, ok=(200,)).json()
+
+
+def put_secret(repo: str, name: str, encrypted_value: str, key_id: str, token: str) -> None:
+    _request(
+        "PUT",
+        f"/repos/{repo}/actions/secrets/{quote(name, safe='')}",
+        token,
+        ok=(201, 204),
+        json={"encrypted_value": encrypted_value, "key_id": key_id},
+    )
+
+
 def put_file(repo: str, path: str, text: str, message: str, branch: str, token: str | None = None) -> None:
     """Create or update one file with a commit on the branch."""
     _, sha = get_file(repo, path, branch, token)

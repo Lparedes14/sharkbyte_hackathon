@@ -7,6 +7,7 @@ import github_io
 # name -> (color, description)
 LABELS = {
     "idea": ("1d76db", "Idea Inbox item"),
+    "built": ("0e8a16", "This idea has its own project repo"),
     "phase:discovery": ("5319e7", "Deep Dive: writing the PRD"),
     "phase:design": ("5319e7", "Design: architecture and scope"),
     "phase:plan": ("5319e7", "Plan: tasks for Cursor"),

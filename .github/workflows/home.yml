@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # /build adds the new project to projects.json
   issues: write
 
 jobs:

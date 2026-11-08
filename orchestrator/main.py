@@ -24,6 +24,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+import build
 import github_io
 import health
 import notify
@@ -36,7 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_LIMIT = 12000
 
 COMMANDS = {
-    "home": ("/ping", "/score", "/revise", "/approve"),
+    "home": ("/ping", "/score", "/revise", "/approve", "/build"),
     "project": ("/ping", "/run", "/approve", "/revise"),
 }
 
@@ -177,8 +178,8 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
         return
     if "idea" in ctx.labels:
         ctx.comment(
-            "Approved ideas become projects with `/build <repo-name> public|private`. "
-            "That command comes in Block 3."
+            "To turn this idea into a project, tell Project Lead to build it. It confirms the repo "
+            "name and visibility with you, then posts `/build <repo-name> public|private`."
         )
         return
     phase = state.phase(ctx.labels)
@@ -208,12 +209,43 @@ def cmd_revise(ctx: Ctx, args: str) -> None:
         ctx.comment(f"Revising the `{state.phase(ctx.labels)}` phase is not built yet.")
 
 
+def cmd_build(ctx: Ctx, args: str) -> None:
+    if "idea" not in ctx.labels:
+        ctx.comment("`/build` works on Idea Inbox issues (label `idea`). Score the idea first with `/score`.")
+        return
+    state.set_status(ctx.repo, ctx.number, ctx.labels, "running")
+    comments = github_io.list_comments(ctx.repo, ctx.number)
+    try:
+        result = build.create_project(ctx.repo, ctx.branch, ctx.issue, comments, args)
+    except build.BuildError as exc:
+        state.set_status(ctx.repo, ctx.number, ctx.labels, "blocked")
+        ctx.comment(f"Could not create the project: {exc}.")
+        return
+
+    ctx.comment(build.report(result))
+    state.add(ctx.repo, ctx.number, ctx.labels, "built")
+    state.set_status(ctx.repo, ctx.number, ctx.labels, None)
+
+    steps = " ".join(f"({i}) {s}" for i, s in enumerate(result.human_steps, 1))
+    payload = notify.make_payload(
+        "repo_created",
+        result.repo,
+        result.url,
+        f"Created {result.repo} and started Deep Dive; the PRD arrives in about 2 minutes. "
+        f"Steps that need a browser sign-in: {steps}",
+        "Do the Vercel steps yourself if you can; otherwise tell me exactly what to click.",
+    )
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+
+
 HANDLERS = {
     "/ping": cmd_ping,
     "/score": cmd_score,
     "/run": cmd_run,
     "/approve": cmd_approve,
     "/revise": cmd_revise,
+    "/build": cmd_build,
 }
 
 
@@ -276,7 +308,7 @@ def run_event() -> int:
         HANDLERS[command](ctx, command_args(body))
     except Exception as exc:  # report every failure on the issue, then fail the run
         traceback.print_exc()
-        known = (PhaseError, SwarmsError, github_io.GitHubError)
+        known = (PhaseError, SwarmsError, github_io.GitHubError, build.BuildError)
         reason = str(exc) if isinstance(exc, known) else type(exc).__name__
         try:
             ctx.comment(

@@ -13,6 +13,11 @@ LABELS = {
     "phase:plan": ("5319e7", "Plan: tasks for Cursor"),
     "phase:build": ("5319e7", "Build: Cursor agents at work"),
     "phase:story": ("5319e7", "Feature story"),
+    "feature": ("c5def5", "A feature request for an existing product"),
+    "review:pass": ("0e8a16", "Code review found no blocking problem"),
+    "review:changes": ("d93f0b", "Code review asks for changes"),
+    "vote:go": ("0e8a16", "Release vote: Go"),
+    "vote:hold": ("d93f0b", "Release vote: Hold"),
     "phase:done": ("0e8a16", "Finished"),
     "status:running": ("fbca04", "An agent run is in progress"),
     "status:waiting-approval": ("d93f0b", "Waiting for your approval"),
@@ -60,6 +65,11 @@ def _replace(repo: str, number: int, labels: set[str], prefix: str, value: str |
 
 def set_phase(repo: str, number: int, labels: set[str], value: str | None) -> None:
     _replace(repo, number, labels, "phase", value)
+
+
+def set_group(repo: str, number: int, labels: set[str], prefix: str, value: str | None) -> None:
+    """Replace a label group on an issue or a PR, such as review:pass or vote:go."""
+    _replace(repo, number, labels, prefix, value)
 
 
 def set_status(repo: str, number: int, labels: set[str], value: str | None) -> None:

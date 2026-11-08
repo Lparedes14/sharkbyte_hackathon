@@ -57,6 +57,22 @@ def production_url_from_links(text: str | None) -> str | None:
     return match.group(1).rstrip(".,)") if match else None
 
 
+NON_UI_PREFIXES = ("supabase/", "docs/", "tasks/", ".github/", ".cursor/", "scripts/", "tests/", "test/", "__tests__/")
+NON_UI_SUFFIXES = (".sql", ".md", ".txt", ".yml", ".yaml", ".json", ".lock", ".gitignore", ".env.example")
+
+
+def is_ui_change(files: list[str]) -> bool:
+    """False when a PR only touches SQL, docs, config or tests: nothing a browser can check.
+
+    Lock files and package.json alone do not change what the user sees either.
+    """
+    for path in files:
+        if path.startswith(NON_UI_PREFIXES) or path.endswith(NON_UI_SUFFIXES):
+            continue
+        return True
+    return False
+
+
 def links_doc(production_url: str) -> str:
     return (
         "# Links\n\n"

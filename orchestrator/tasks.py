@@ -19,6 +19,7 @@ TASK_FILE = re.compile(r"^tasks/(\d{3})-(.+)\.md$")
 PR_TAG = re.compile(r"^\s*\[task-(\d+)\]", re.IGNORECASE)
 PART_OF = re.compile(r"part of\s+#(\d+)", re.IGNORECASE)
 DEPENDS = re.compile(r"Depends on:\s*([^.]*)\.")
+HEADER_ISSUE = re.compile(r"\(issue #(\d+)\)")
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Task:
     path: str
     title: str
     depends_on: list[int] = field(default_factory=list)
+    issue: int | None = None  # the issue this task belongs to, read from the task file header
 
 
 def parse_task(path: str, text: str) -> Task | None:
@@ -38,12 +40,14 @@ def parse_task(path: str, text: str) -> Task | None:
     deps_line = DEPENDS.search(text or "")
     deps = [int(d) for d in re.findall(r"\d{3}", deps_line.group(1))] if deps_line else []
     n = int(match.group(1))
+    issue = HEADER_ISSUE.search(text or "")
     return Task(
         n=n,
         slug=match.group(2),
         path=path,
         title=heading.group(1).strip() if heading else match.group(2).replace("-", " "),
         depends_on=[d for d in deps if d < n],
+        issue=int(issue.group(1)) if issue else None,
     )
 
 
@@ -57,6 +61,20 @@ def list_tasks(repo: str, branch: str) -> list[Task]:
         if task:
             tasks.append(task)
     return sorted(tasks, key=lambda t: t.n)
+
+
+def tasks_of_issue(all_tasks: list[Task], number: int, is_feature: bool) -> list[Task]:
+    """The tasks that belong to one issue. Old task files without an issue belong to the project issue."""
+    return [t for t in all_tasks if t.issue == number or (t.issue is None and not is_feature)]
+
+
+def task_file_for(repo: str, n: int, branch: str) -> str | None:
+    """The path of tasks/NNN-*.md, or None."""
+    for path in github_io.list_dir(repo, "tasks", branch):
+        match = TASK_FILE.match(path)
+        if match and int(match.group(1)) == n:
+            return path
+    return None
 
 
 def pr_task_number(title: str) -> int | None:

@@ -224,3 +224,29 @@ def pulls_for_commit(repo: str, sha: str, token: str | None = None) -> list[dict
     """The pull requests a commit belongs to (a squash-merge commit maps to its merged PR)."""
     resp = _request("GET", f"/repos/{repo}/commits/{quote(sha)}/pulls", token, ok=(200, 404, 422))
     return resp.json() if resp.status_code == 200 else []
+
+
+def pull_files(repo: str, number: int, token: str | None = None) -> list[str]:
+    """Paths of the files a pull request changes (first 100)."""
+    resp = _request("GET", f"/repos/{repo}/pulls/{number}/files?per_page=100", token, ok=(200,))
+    return [item.get("filename", "") for item in resp.json() if isinstance(item, dict)]
+
+
+def get_pull(repo: str, number: int, token: str | None = None) -> dict:
+    return _request("GET", f"/repos/{repo}/pulls/{number}", token, ok=(200,)).json()
+
+
+def get_pull_diff(repo: str, number: int, token: str | None = None) -> str:
+    """The unified diff of a pull request."""
+    headers = {**_headers(_token(token)), "Accept": "application/vnd.github.diff"}
+    resp = requests.get(f"{API}/repos/{repo}/pulls/{number}", headers=headers, timeout=TIMEOUT)
+    if resp.status_code != 200:
+        raise GitHubError(f"GET /repos/{repo}/pulls/{number} (diff) returned HTTP {resp.status_code}")
+    return resp.text
+
+
+def merge_pull(repo: str, number: int, method: str, title: str, token: str) -> str:
+    """Merge a PR with the orchestrator's own token. Returns the merge commit sha."""
+    body = {"merge_method": method, "commit_title": title[:250]}
+    resp = _request("PUT", f"/repos/{repo}/pulls/{number}/merge", token, ok=(200,), json=body)
+    return resp.json().get("sha", "")

@@ -1,0 +1,17 @@
+{
+  "name": "feature-story",
+  "description": "Turn a feature request for an existing product into one user story with acceptance criteria",
+  "swarm_type": "SequentialWorkflow",
+  "agents": [
+    {
+      "agent_name": "Product Owner",
+      "description": "Writes the user story and acceptance criteria for the feature",
+      "system_prompt": "You are the Product Owner. The product already exists (its PRD and design are in the task). Turn the founder's feature request into one user story with 3 to 5 acceptance criteria that a tester can check in a browser on a Vercel preview, written as observable results. Reuse the product's existing pages and data where you can. Hand your story to the MVP Cutter."
+    },
+    {
+      "agent_name": "MVP Cutter",
+      "description": "Trims the story to the smallest shippable version and gives the final answer",
+      "system_prompt": "You are the MVP Cutter and you give the final answer. Trim the Product Owner's story to the smallest version that still delivers the value: at most 4 acceptance criteria, small enough for 1 to 3 pull requests. List what you cut in out_of_scope. End your answer with one fenced ```json block that matches the feature schema in the task, and nothing after it."
+    }
+  ]
+}

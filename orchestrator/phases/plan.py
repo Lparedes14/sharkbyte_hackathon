@@ -43,18 +43,19 @@ def slugify(text: str) -> str:
     return slug[:40].strip("-") or "task"
 
 
-def normalize_tasks(plan: dict) -> list[dict]:
-    """Clean tasks: numbered 1..n in order, unique slugs, depends_on pointing only at earlier tasks."""
+def normalize_tasks(plan: dict, start: int = 1) -> list[dict]:
+    """Clean tasks: numbered start.. in order, unique slugs, depends_on pointing only at earlier tasks
+    of this plan. A feature plan starts after the project's existing tasks (start > 1)."""
     tasks = []
     used: set[str] = set()
     ids: dict[str, int] = {}
-    for i, raw in enumerate(_dicts(plan.get("tasks"))[:MAX_TASKS], 1):
+    for i, raw in enumerate(_dicts(plan.get("tasks"))[:MAX_TASKS], start):
         title = str(raw.get("title", "")).strip() or f"Task {i}"
         slug = slugify(raw.get("slug") or title)
         while slug in used:
             slug += f"-{i}"
         used.add(slug)
-        ids[str(raw.get("id", i)).strip()] = i
+        ids[str(raw.get("id", i - start + 1)).strip()] = i
         tasks.append(
             {
                 "n": i,
@@ -76,7 +77,7 @@ def normalize_tasks(plan: dict) -> list[dict]:
             n = ids.get(str(ref).strip().lstrip("#"))
             if n and n < task["n"] and n not in deps:
                 deps.append(n)
-        if not deps and task["n"] > 1:
+        if not deps and task["n"] > start:
             deps = [task["n"] - 1]  # tasks run one at a time, so the safe default is the one before
         task["depends_on"] = deps
     return tasks
@@ -170,20 +171,33 @@ def run(
     issue_ref: str,
     feedback: str | None = None,
     previous_index: str | None = None,
+    feature_story: str | None = None,
+    start_n: int = 1,
 ) -> PhaseResult:
+    """Plan a whole project, or (with feature_story) only the 1 to 3 tasks of one feature."""
     if not prd.strip() or not design.strip():
         raise PhaseError("the plan needs the approved PRD (docs/PRD.md) and design (docs/DESIGN.md)")
+    if feature_story is not None and not feature_story.strip():
+        raise PhaseError("the feature has no approved story")
 
     task = (
         "Plan the build of this product. The Tech Lead splits the design into small tasks; the "
         "Cursor Prompt Writer then writes the Cursor-ready task prompts and the project rules and "
         "gives the final answer, ending with one fenced json block that matches this schema:\n"
         + SCHEMA
-        + f"\n\nRules: 3 to 6 tasks (never more than {MAX_TASKS}), in build order; each task is one "
-        "pull request; ids are 1, 2, 3 in order and depends_on lists earlier ids; every user story "
-        "is covered; copy the PRD's acceptance criteria into the task that delivers them; list real "
-        "file paths from the design; never write secret values.\n\n"
-        "APPROVED PRD:\n" + prd[-7000:] + "\n\nAPPROVED DESIGN:\n" + design[-9000:]
+        + (
+            "\n\nThis is a NEW FEATURE for a product that already exists and is built. Plan only the feature "
+            "below, in 1 to 3 tasks (each one pull request); the existing app, pages and data are already in "
+            "the repo, so extend them and do not scaffold anything again. Leave the rules object out. "
+            "Copy the feature's acceptance criteria into the task that delivers them. Ids are 1, 2, 3 in order."
+            if feature_story
+            else f"\n\nRules: 3 to 6 tasks (never more than {MAX_TASKS}), in build order; each task is one "
+            "pull request; ids are 1, 2, 3 in order and depends_on lists earlier ids; every user story "
+            "is covered; copy the PRD's acceptance criteria into the task that delivers them; list real "
+            "file paths from the design; never write secret values."
+        )
+        + "\n\nAPPROVED PRD:\n" + prd[-7000:] + "\n\nAPPROVED DESIGN:\n" + design[-9000:]
+        + (("\n\nTHE FEATURE TO PLAN:\n" + feature_story[-4000:]) if feature_story else "")
     )
     if previous_index:
         task += "\n\nTHE PREVIOUS TASK LIST (revise it, do not start over):\n" + previous_index[-3000:]
@@ -194,7 +208,7 @@ def run(
     plan = json_from(
         response, REQUIRED, SCHEMA, roles=["Cursor Prompt Writer"], any_role_fallback=True, label="formatter-plan"
     )
-    tasks = normalize_tasks(plan)
+    tasks = normalize_tasks(plan, start_n)
     if not tasks:
         raise PhaseError("the plan has no tasks")
 
@@ -202,17 +216,19 @@ def run(
     product = match.group(1).strip() if match else "the product"
     covered = {s for t in tasks for s in t["stories"]}
     story_ids = set(re.findall(r"^### (US-\d+)", prd, re.MULTILINE))
-    missing = sorted(story_ids - covered)
+    missing = [] if feature_story is not None else sorted(story_ids - covered)
 
     files = {task_path(t): render_task(t, product, issue_ref) for t in tasks}
-    files["tasks/INDEX.md"] = render_index(tasks, product, issue_ref)
-    files[".cursor/rules/project.mdc"] = render_rules(plan, product)
+    if feature_story is None:  # a feature never rewrites the project's index or rules
+        files["tasks/INDEX.md"] = render_index(tasks, product, issue_ref)
+        files[".cursor/rules/project.mdc"] = render_rules(plan, product)
 
     lines = [
         "Plan ready from the Plan swarm (Swarms `SequentialWorkflow`: the Tech Lead split the design, "
         "then the Cursor Prompt Writer wrote the task prompts and project rules).",
         "",
-        f"**{product}**: {len(tasks)} tasks. Cursor builds them one at a time, in this order.",
+        f"**{product}**{' (feature)' if feature_story is not None else ''}: {len(tasks)} tasks. "
+        "Cursor builds them one at a time, in this order.",
         "",
         "| # | Task | Depends on | Stories |",
         "|---|---|---|---|",

@@ -34,7 +34,7 @@ import notify
 import previews
 import state
 import tasks
-from phases import design, discovery, idea_lab, plan
+from phases import design, discovery, feature, idea_lab, plan, release, review, vote
 from phases.common import PhaseError, PhaseResult
 from swarms_client import SwarmsError
 
@@ -43,7 +43,7 @@ CONTEXT_LIMIT = 12000
 
 COMMANDS = {
     "home": ("/ping", "/score", "/revise", "/approve", "/build"),
-    "project": ("/ping", "/run", "/approve", "/revise", "/next", "/vote"),
+    "project": ("/ping", "/run", "/approve", "/revise", "/next", "/vote", "/release"),
 }
 
 
@@ -182,17 +182,53 @@ def run_design(ctx: Ctx, feedback: str | None) -> None:
     run_phase(ctx, work)
 
 
-def run_plan(ctx: Ctx, feedback: str | None) -> None:
+def feature_file(ctx: Ctx) -> str | None:
+    """Path of this feature issue's story file, docs/features/<N>-<slug>.md."""
+    for path in github_io.list_dir(ctx.repo, "docs/features", ctx.branch):
+        if path.startswith(f"docs/features/{ctx.number}-"):
+            return path
+    return None
+
+
+def run_feature(ctx: Ctx, feedback: str | None) -> None:
     def work() -> PhaseResult:
         prd, _ = github_io.get_file(ctx.repo, "docs/PRD.md", ctx.branch)
         design_doc, _ = github_io.get_file(ctx.repo, "docs/DESIGN.md", ctx.branch)
+        path = feature_file(ctx)
         previous = None
-        if feedback:
+        if feedback and path:
+            previous, _ = github_io.get_file(ctx.repo, path, ctx.branch)
+        return feature.run(
+            issue_context(ctx), prd or "", design_doc or "", ctx.number, feedback, previous, path
+        )
+
+    run_phase(ctx, work)
+
+
+def run_plan(ctx: Ctx, feedback: str | None) -> None:
+    is_feature = "feature" in ctx.labels
+
+    def work() -> PhaseResult:
+        prd, _ = github_io.get_file(ctx.repo, "docs/PRD.md", ctx.branch)
+        design_doc, _ = github_io.get_file(ctx.repo, "docs/DESIGN.md", ctx.branch)
+        all_tasks = tasks.list_tasks(ctx.repo, ctx.branch)
+        mine = tasks.tasks_of_issue(all_tasks, ctx.number, is_feature)
+        previous, story, start = None, None, 1
+        if is_feature:
+            path = feature_file(ctx)
+            story, _ = github_io.get_file(ctx.repo, path, ctx.branch) if path else (None, None)
+            others = [t.n for t in all_tasks if t not in mine]
+            start = (min(t.n for t in mine) if mine else (max(others) + 1 if others else 1))
+            if feedback:
+                previous = "\n".join(f"{t.n:03d} {t.title}" for t in mine)
+        elif feedback:
             previous, _ = github_io.get_file(ctx.repo, "tasks/INDEX.md", ctx.branch)
-        result = plan.run(prd or "", design_doc or "", f"issue #{ctx.number}", feedback, previous)
-        # a new plan replaces the old task files, so none are left behind
-        old = github_io.list_dir(ctx.repo, "tasks", ctx.branch)
-        result.delete_paths = [p for p in old if p.endswith(".md") and p not in result.files]
+        result = plan.run(
+            prd or "", design_doc or "", f"issue #{ctx.number}", feedback, previous,
+            feature_story=(story or "") if is_feature else None, start_n=start,
+        )
+        # a new plan replaces this issue's old task files, never another issue's
+        result.delete_paths = [t.path for t in mine if t.path not in result.files]
         return result
 
     run_phase(ctx, work)
@@ -200,11 +236,13 @@ def run_plan(ctx: Ctx, feedback: str | None) -> None:
 
 def launch_next(ctx: Ctx, again: bool = False) -> None:
     """Hand the next task to Project Lead, which starts a Cursor Cloud Agent for it."""
-    plan_tasks = tasks.list_tasks(ctx.repo, ctx.branch)
+    plan_tasks = tasks.tasks_of_issue(
+        tasks.list_tasks(ctx.repo, ctx.branch), ctx.number, "feature" in ctx.labels
+    )
     if not plan_tasks:
-        ctx.comment("There are no task files in `tasks/` yet. Run `/run plan` first.")
+        ctx.comment("There are no task files for this issue in `tasks/` yet. Run `/run plan` first.")
         return
-    since = github_io.last_commit_date(ctx.repo, "tasks/INDEX.md", ctx.branch)
+    since = github_io.last_commit_date(ctx.repo, plan_tasks[0].path, ctx.branch)
     prs = tasks.task_prs(github_io.list_pulls(ctx.repo), since)
     status = tasks.statuses(plan_tasks, prs, tasks.launched_numbers(ctx.labels))
     task, why = tasks.next_task(plan_tasks, status, again)
@@ -269,8 +307,113 @@ def cmd_next(ctx: Ctx, args: str) -> None:
     launch_next(ctx, again=args.strip().lower() == "again")
 
 
+def _pr_facts(ctx: Ctx) -> dict:
+    """What the vote and the release need to know about the PR this command was posted on."""
+    pr = github_io.get_pull(ctx.repo, ctx.number)
+    comments = github_io.list_comments(ctx.repo, ctx.number)
+    qa_result, qa_text = vote.qa_verdict(comments)
+    review_verdict, review_text = vote.review_state(comments)
+    files = github_io.pull_files(ctx.repo, ctx.number)
+    number = tasks.pr_task_number(pr.get("title", ""))
+    task_path = tasks.task_file_for(ctx.repo, number, ctx.branch) if number else None
+    task_text = (github_io.get_file(ctx.repo, task_path, ctx.branch)[0] or "") if task_path else ""
+    return {
+        "pr": pr, "comments": comments, "qa_result": qa_result, "qa_text": qa_text,
+        "review_verdict": review_verdict, "review_text": review_text, "files": files,
+        "ui": previews.is_ui_change(files), "task_text": task_text, "task_number": number,
+    }
+
+
 def cmd_vote(ctx: Ctx, args: str) -> None:
-    ctx.comment("QA result noted. The release vote is not built yet, so nothing runs now.")
+    if not ctx.issue.get("pull_request"):
+        ctx.comment("`/vote` works on a pull request. Post it on the PR.")
+        return
+    facts = _pr_facts(ctx)
+    pr = facts["pr"]
+    if pr.get("state") != "open":
+        ctx.comment("This pull request is not open, so there is nothing to vote on.")
+        return
+    result = vote.run(
+        pr.get("title", ""), facts["task_text"], facts["review_text"], facts["review_verdict"],
+        facts["qa_text"], facts["qa_result"], facts["ui"], facts["files"],
+    )
+    pr_link = pr.get("html_url", "")
+    ctx.comment(vote.render(result, pr_link))
+    state.set_group(ctx.repo, ctx.number, ctx.labels, "vote", "go" if result.go else "hold")
+
+    issue = tasks.find_issue(ctx.repo, pr.get("body") or "")
+    if issue and result.go:
+        state.set_status(ctx.repo, issue["number"], state.names(issue), "waiting-go")
+
+    title = pr.get("title", "")
+    qa_word = "QA not needed (no UI change)" if not facts["ui"] else f"QA {(facts['qa_result'] or 'missing').upper()}"
+    review_word = f"review {(facts['review_verdict'] or 'missing').upper()}"
+    if result.go:
+        summary = f"Release vote on {title}: {result.go_count}/{result.total} Go. {qa_word}, {review_word}."
+        question = "Release it? Reply Go and I merge it, or tell me what to change."
+    else:
+        why = "; ".join(result.gates) or f"only {result.go_count}/{result.total} voted Go"
+        summary = f"Release vote on {title}: HOLD ({result.go_count}/{result.total} Go). Blocked because {why}."
+        question = "Tell me what you want: wait for fixes and vote again, or release anyway."
+    payload = notify.make_payload("vote_result", ctx.repo, pr_link, summary, question)
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+
+
+def cmd_release(ctx: Ctx, args: str) -> None:
+    """Merge the PR after the founder's own Go. Project Lead posts this only after that Go."""
+    if not ctx.issue.get("pull_request"):
+        ctx.comment("`/release` works on a pull request. Post it on the PR.")
+        return
+    anyway = args.strip().lower() == "anyway"
+    if "vote:go" not in ctx.labels and not anyway:
+        ctx.comment("This PR has no Go vote. Run `/vote` first, or use `/release anyway` to override.")
+        return
+    facts = _pr_facts(ctx)
+    pr = facts["pr"]
+    if pr.get("state") != "open":
+        ctx.comment("This pull request is not open, so it cannot be released.")
+        return
+    if pr.get("mergeable") is False:
+        ctx.comment("GitHub says this PR cannot be merged yet (conflicts or a blocked branch). Not merging.")
+        return
+
+    vote_text = next(
+        (c.get("body", "") for c in reversed(facts["comments"]) if "Release vote:" in (c.get("body") or "")), ""
+    )
+    release_facts = (
+        f"PULL REQUEST: {pr.get('title', '')} (#{ctx.number})\nMERGEABLE: {pr.get('mergeable')}\n"
+        f"HOLD VOTE OVERRIDDEN BY THE FOUNDER: {anyway}\nFILES: {', '.join(facts['files'][:25])}\n\n"
+        f"VOTE:\n{vote_text[:2500]}\n\nCODE REVIEW:\n{facts['review_text'][:2500]}\n\nQA:\n{facts['qa_text'][:2500]}"
+    )
+    plan_ = release.run(release_facts)
+    if not plan_["go"] and not anyway:
+        ctx.comment(f"The release manager says not to merge yet: {plan_['reason'] or 'no reason given'}. Not merging.")
+        return
+
+    token = os.environ.get("GH_TOKEN", "").strip()
+    if not token:
+        raise github_io.GitHubError("GH_TOKEN is not set")
+    title = pr.get("title", "")
+    try:
+        sha = github_io.merge_pull(ctx.repo, ctx.number, plan_["method"], f"{title} (#{ctx.number})", token)
+    except github_io.GitHubError as exc:
+        ctx.comment(f"Could not merge: {exc}. Nothing was changed.")
+        return
+
+    ctx.comment(release.render_comment(plan_, sha, anyway and "vote:go" not in ctx.labels))
+    entry = release.changelog_entry(ctx.number, title, plan_["changelog"])
+    existing, _ = github_io.get_file(ctx.repo, "CHANGELOG.md", ctx.branch)
+    github_io.put_file(
+        ctx.repo, "CHANGELOG.md", release.add_to_changelog(existing, entry),
+        f"Changelog: {title} (#{ctx.number})", ctx.branch,
+    )
+    payload = notify.make_payload(
+        "merged", ctx.repo, pr.get("html_url", ""),
+        f"Merged {title}. {plan_['note'] or 'Vercel is deploying it to production.'}",
+    )
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
 
 
 def cmd_run(ctx: Ctx, args: str) -> None:
@@ -282,9 +425,9 @@ def cmd_run(ctx: Ctx, args: str) -> None:
     elif which == "plan":
         run_plan(ctx, feedback=None)
     elif which == "feature":
-        ctx.comment("The `feature` phase is not built yet. Available now: `/run discovery`, `/run design`, `/run plan`.")
+        run_feature(ctx, feedback=None)
     else:
-        ctx.comment("Tell me which phase to run: `/run discovery`, `/run design` or `/run plan`.")
+        ctx.comment("Tell me which phase to run: `/run discovery`, `/run design`, `/run plan` or `/run feature`.")
 
 
 def cmd_approve(ctx: Ctx, args: str) -> None:
@@ -298,6 +441,11 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
         )
         return
     phase = state.phase(ctx.labels)
+    if phase == "story":
+        ctx.comment("Feature story approved. Starting the Plan phase now; the 1 to 3 tasks arrive in about 2 minutes.")
+        state.set_phase(ctx.repo, ctx.number, ctx.labels, "plan")
+        run_plan(ctx, feedback=None)
+        return
     if phase == "discovery":
         ctx.comment("PRD approved. Starting the Design phase now; the design arrives in about 2 minutes.")
         state.set_phase(ctx.repo, ctx.number, ctx.labels, "design")
@@ -316,8 +464,8 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
         return
     if phase == "build":
         ctx.comment(
-            "Review the pull request on GitHub and merge it when you are happy; the next task then starts by "
-            "itself. Approving and merging from the chat comes with the release flow."
+            "Pull requests are released from the PR itself: after the QA result the release vote runs "
+            "(`/vote`), and your Go in the chat posts `/release`, which merges it. The next task then starts by itself."
         )
         return
     ctx.comment(f"Approval for the `{phase}` phase is not built yet.")
@@ -334,6 +482,8 @@ def cmd_revise(ctx: Ctx, args: str) -> None:
         cmd_score(ctx, args)
     elif state.phase(ctx.labels) == "discovery":
         run_discovery(ctx, feedback=args)
+    elif state.phase(ctx.labels) == "story":
+        run_feature(ctx, feedback=args)
     elif state.phase(ctx.labels) == "design":
         run_design(ctx, feedback=args)
     elif state.phase(ctx.labels) == "plan":
@@ -381,6 +531,7 @@ HANDLERS = {
     "/build": cmd_build,
     "/next": cmd_next,
     "/vote": cmd_vote,
+    "/release": cmd_release,
 }
 
 
@@ -452,6 +603,59 @@ def handle_pull_request(event: dict) -> int:
     return 0
 
 
+def run_review(ctx: Ctx, pr: dict, sha: str = "") -> None:
+    """Code review of a task PR (Swarms ConcurrentWorkflow). Asks Cursor for fixes, at most twice.
+
+    Runs when Vercel says the build passed, so the reviewers know the code compiles."""
+    number = pr["number"]
+    sha = sha or (pr.get("head") or {}).get("sha", "")
+    pr_link = pr.get("html_url", "")
+    comments = github_io.list_comments(ctx.repo, number)
+    done, last_sha = review.last_round(comments)
+    if sha and last_sha == sha:
+        print("This commit was already reviewed.")
+        return
+    round_n = done + 1
+    title = pr.get("title", "")
+    try:
+        diff = github_io.get_pull_diff(ctx.repo, number)
+        task_path = tasks.task_file_for(ctx.repo, tasks.pr_task_number(title) or 0, ctx.branch)
+        task_text = github_io.get_file(ctx.repo, task_path, ctx.branch)[0] if task_path else ""
+        result = review.run(title, task_text or "", diff, build_passed=True)
+    except (PhaseError, SwarmsError, github_io.GitHubError) as exc:
+        github_io.post_comment(ctx.repo, number, f"The code review could not run: {exc}. Push a commit or reopen the PR to try again.")
+        return
+
+    github_io.post_comment(ctx.repo, number, review.render(result, round_n, sha, pr_link))
+    pr_labels = state.names(pr)
+    state.set_group(ctx.repo, number, pr_labels, "review", result.verdict)
+    if result.verdict == "pass":
+        return
+
+    if round_n <= review.MAX_ROUNDS:
+        payload = notify.make_payload(
+            "changes_requested", ctx.repo, pr_link,
+            f"The code review asked for changes on {title} (round {round_n} of {review.MAX_ROUNDS}): "
+            f"{len(result.blocking)} high-severity problem(s).",
+            "Send the prompt field to the Cursor agent that opened this pull request, as a follow-up. Do not merge.",
+            prompt=review.followup_prompt(pr_link, result),
+        )
+    else:
+        github_io.post_comment(
+            ctx.repo, number,
+            f"The review still finds problems after {review.MAX_ROUNDS} rounds, so I stop asking Cursor. "
+            "The founder decides: ask Cursor again by hand, release anyway with `/release anyway`, or close the PR.",
+        )
+        payload = notify.make_payload(
+            "changes_requested", ctx.repo, pr_link,
+            f"The code review still finds {len(result.blocking)} high-severity problem(s) on {title} after "
+            f"{review.MAX_ROUNDS} fix rounds.",
+            "Ask me what to do: try Cursor again, release anyway, or close it. Do nothing until I answer.",
+        )
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+
+
 # ---------- Vercel status events ----------
 
 PREVIEW_WAIT_TRIES = 6
@@ -461,6 +665,16 @@ PREVIEW_WAIT_SECONDS = 8
 def _send(prefix: str, payload: dict) -> None:
     ok, detail = notify.send(prefix, payload)
     print(f"{prefix} webhook: {'ok' if ok else 'FAILED'} ({detail})")
+
+
+def _review_after_build(repo: str, branch: str, pr: dict, sha: str) -> None:
+    """The preview built, so the code compiles: now review it. A failed review never breaks the event."""
+    ctx = Ctx(repo=repo, number=pr["number"], issue={}, labels=set(), branch=branch, where="project")
+    try:
+        run_review(ctx, pr, sha)
+    except Exception as exc:
+        traceback.print_exc()
+        print(f"Code review failed: {type(exc).__name__}")
 
 
 def handle_status(event: dict) -> int:
@@ -524,6 +738,25 @@ def handle_status(event: dict) -> int:
         github_io.post_comment(repo, pr["number"], "The preview is ready, but I could not find its URL in the Vercel comment.")
         return 0
 
+    try:
+        ui = previews.is_ui_change(github_io.pull_files(repo, pr["number"]))
+    except github_io.GitHubError:
+        ui = True  # when unsure, test it
+    if not ui:
+        github_io.post_comment(
+            repo, pr["number"],
+            f"Preview ready: {url}\n\nThis PR changes no user interface (only SQL, docs, config or tests), "
+            "so there is nothing to test in a browser. QA Tester is not asked; the code review covers it.",
+        )
+        _send("PROGRESS_REPORTER", notify.make_payload(
+            "preview_ready", repo, pr_link,
+            f"Preview for task {number:03d} is ready: {pr.get('title', '')}. It has no UI change, so the page looks the same.",
+            "Skip the screenshots unless I ask.",
+            preview_url=url,
+        ))
+        _review_after_build(repo, branch, pr, sha)
+        return 0
+
     github_io.post_comment(repo, pr["number"], f"Preview ready: {url}\n\nProgress Reporter and QA Tester have the link.")
     acceptance = f"https://github.com/{repo}/blob/{branch}/docs/ACCEPTANCE.md"
     _send("PROGRESS_REPORTER", notify.make_payload(
@@ -534,12 +767,14 @@ def handle_status(event: dict) -> int:
     ))
     _send("QA_TESTER", notify.make_payload(
         "qa_request", repo, pr_link,
-        f"Test the preview of task {number:03d} against the acceptance criteria in {acceptance} "
-        "that this task delivers (the task file is in tasks/). Check them in a browser like a real user.",
+        f"Test the preview of task {number:03d} against the acceptance criteria in its task file "
+        f"({tasks.task_file_for(repo, number, branch) or 'tasks/'}), and in {acceptance} for the product. "
+        "Check them in a browser like a real user.",
         "Follow your standing instructions: one PR comment that starts with QA RESULT: PASS or QA RESULT: FAIL "
         "with one line per criterion, then a separate comment with only /vote, and a bug issue for each failed criterion.",
         preview_url=url,
     ))
+    _review_after_build(repo, branch, pr, sha)
     return 0
 
 

@@ -83,6 +83,8 @@ Talk normally. Project Lead finds the project in `projects.json`, picks the repo
 | "Make the quiz shorter." (when it asked for approval) | Comments `/revise "make the quiz shorter"`. |
 | "Go." (when it showed the design) | Comments `/approve`; the Plan phase starts and writes the task list about 2 minutes later. |
 | "Go." (when it showed the plan) | Comments `/approve`; the issue moves to the Build phase and the first task goes to Cursor. |
+| "Add a daily quiz to the English app." (the project already has a PRD) | Opens a feature issue in the project repo and comments `/run feature`. Story, then "Go", then plan, then "Go", then Cursor builds 1 to 3 tasks. |
+| "Go." (when it showed a release vote) | Comments `/release` on the PR: it merges, writes the CHANGELOG and starts the next task. |
 | "Start the next task." / "Try that task again." | Comments `/next` (or `/next again` to send a task to Cursor again when no PR came). |
 | "Redo the design with fewer tables." | Comments `/revise "redo the design with fewer tables"`. |
 | "Is everything working?" | Comments `/ping` on the "Health check" issue in home base. |
@@ -103,7 +105,7 @@ How you work:
 - Setup: if you have no note saying "Setup complete", read docs/SETUP.md in home base and walk me through Part 1.
 - When I talk about an idea or a project, read projects.json in home base:
   - The project is listed and its repo has no docs/PRD.md yet: open an issue in that repo with my words as the description and comment "/run discovery".
-  - The project is listed and already has a PRD: tell me feature work is not built yet.
+  - The project is listed and already has a PRD (a new feature for an existing product): open an issue in that repo with my words as the description and comment "/run feature". When the feature story arrives, summarize it and ask for Go like a PRD; after Go the plan arrives, ask for Go again.
   - It is a new idea: open an issue in home base with the label "idea", my words as the description, and comment "/score".
 - When I say to build an idea: propose a repo name (lowercase, dashes), ask public or private, and after my yes comment "/build <name> <public|private>" on the idea's issue.
 - When a webhook arrives, read its "event":
@@ -112,11 +114,14 @@ How you work:
   - build_task: start a Cursor Cloud Agent on the repo in the "repo" field, and give it exactly the text in the "prompt" field as its instructions. Do not change the prompt and do not merge anything. Tell me in one line which task started. When Cursor gives you the pull request link, tell me.
   - pr_opened: tell me in 2-3 lines that Cursor's pull request is ready, with the link. If I ask, open the preview and show me a screenshot. Never merge or approve it yourself; I merge it on GitHub.
   - build_done: tell me all tasks are built and merged.
+  - changes_requested: if the payload has a "prompt" field, send exactly that text as a follow-up to the Cursor agent that opened the pull request in the link field (the same agent), tell me in one line, and do not merge anything. If it has no prompt field, tell me the summary and ask me what to do: ask Cursor again, release anyway, or close the PR. Do nothing until I answer.
+  - vote_result: summarize the release vote in 2-3 short lines with the pull request link, and ask me the question. If I answer Go or yes, comment exactly "/release" on that pull request. If a HOLD happened and I say to release anyway, comment "/release anyway". Never post /release without my explicit yes in this chat.
+  - merged: tell me the pull request is merged and going live, with the link.
   - build_failed: tell me the Vercel build failed, with the link, and offer to send the error to Cursor so it fixes the pull request.
   - ping: tell me "Webhook works" and the summary.
   - anything else: tell me the summary and the link.
 - Never create a repo, merge, or release without my explicit yes in this chat. Never paste secrets, tokens or keys in chat or on GitHub.
-- Commands you may post: /score, /build, /run discovery, /approve, /revise, /next, /ping.
+- Commands you may post: /score, /build, /run discovery, /run feature, /approve, /revise, /next, /release (only after my Go), /ping. QA Tester posts /vote, not you.
 - Keep messages short and always include the link.
 ```
 
@@ -124,6 +129,17 @@ How you work:
 
 ```text
 Update the "Message me" routine so it follows your standing instructions for every webhook event: approval_needed, build_task (start a Cursor Cloud Agent with the prompt field, exactly), pr_opened, build_done, repo_created (tell me the project is ready; if the summary lists browser steps, do them yourself from docs/SETUP.md Part 2 or tell me the exact steps), ping, and anything else.
+```
+
+### Project Lead: update message for review, vote and release
+
+```text
+Update your standing instructions and your "Message me" routine. New webhook events and commands:
+- changes_requested: if the payload has a "prompt" field, send exactly that text as a follow-up to the Cursor agent that opened the pull request in the link field (the same agent), tell me in one line, and do not merge anything. If it has no prompt field, tell me the summary and ask me what to do: ask Cursor again, release anyway, or close the PR. Do nothing until I answer.
+- vote_result: summarize the release vote in 2-3 short lines with the pull request link, and ask me the question. If I answer Go or yes, comment exactly "/release" on that pull request. If a HOLD happened and I say to release anyway, comment "/release anyway". Never post /release without my explicit yes in this chat.
+- merged: tell me the pull request is merged and going live, with the link.
+- A feature request for a project that already has a PRD (for example "add a daily quiz to the English app"): open an issue in that project's repo with my words as the description, then comment "/run feature" on it. When the feature story arrives (approval_needed), summarize it and ask for Go like a PRD; after Go the plan arrives, ask for Go again.
+You may now also post /release (only after my Go), /next and /run feature. QA Tester posts /vote, not you.
 ```
 
 ### Progress Reporter and QA Tester

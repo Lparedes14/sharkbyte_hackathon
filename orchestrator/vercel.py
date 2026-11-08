@@ -15,6 +15,7 @@ import os
 import requests
 
 API = "https://api.vercel.com"
+FRAMEWORK = "nextjs"
 TIMEOUT = 30
 
 
@@ -85,7 +86,13 @@ def link_repo(repo_full: str) -> str:
                 headers=_headers(),
                 params=params,
                 timeout=TIMEOUT,
-                json={"name": name, "gitRepository": {"type": "github", "repo": repo_full}},
+                # The default stack is Next.js. Without this the project is "Other" (static) and the
+                # first build fails with "No Output Directory named public" once the app exists.
+                json={
+                    "name": name,
+                    "framework": FRAMEWORK,
+                    "gitRepository": {"type": "github", "repo": repo_full},
+                },
             )
             if resp.status_code not in (200, 201):
                 error = _error(resp, "creating the Vercel project")
@@ -99,15 +106,19 @@ def link_repo(repo_full: str) -> str:
             raise _error(resp, "reading the Vercel project")
         project = resp.json()
 
+        settings: dict = {"ssoProtection": None}
+        if not project.get("framework"):
+            settings["framework"] = FRAMEWORK  # only fills in an unset preset, never overrides one
+
         resp = requests.patch(
             f"{API}/v9/projects/{project.get('id', name)}",
             headers=_headers(),
             params=params,
             timeout=TIMEOUT,
-            json={"ssoProtection": None},
+            json=settings,
         )
         if resp.status_code != 200:
-            raise _error(resp, "turning off Require Log In")
+            raise _error(resp, "turning off Require Log In and setting the framework")
     except requests.RequestException as exc:
         raise VercelError(f"request failed ({type(exc).__name__})") from None
     return name

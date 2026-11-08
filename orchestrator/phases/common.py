@@ -21,6 +21,7 @@ class PhaseError(Exception):
 class PhaseResult:
     comment: str
     files: dict[str, str] = field(default_factory=dict)
+    delete_paths: list[str] = field(default_factory=list)
     commit_message: str = ""
     phase: str | None = None
     status: str | None = None

@@ -172,3 +172,23 @@ def put_file(repo: str, path: str, text: str, message: str, branch: str, token: 
     if sha:
         body["sha"] = sha
     _request("PUT", f"/repos/{repo}/contents/{quote(path)}", token, ok=(200, 201), json=body)
+
+
+def list_dir(repo: str, path: str, ref: str, token: str | None = None) -> list[str]:
+    """File paths directly inside a folder on a branch; empty when the folder does not exist."""
+    resp = _request(
+        "GET", f"/repos/{repo}/contents/{quote(path)}?ref={quote(ref, safe='')}", token, ok=(200, 404)
+    )
+    if resp.status_code == 404:
+        return []
+    data = resp.json()
+    return [item["path"] for item in data if isinstance(item, dict) and item.get("type") == "file"]
+
+
+def delete_file(repo: str, path: str, message: str, branch: str, token: str | None = None) -> None:
+    """Delete one file with a commit on the branch (nothing happens when it does not exist)."""
+    _, sha = get_file(repo, path, branch, token)
+    if not sha:
+        return
+    body = {"message": message, "sha": sha, "branch": branch}
+    _request("DELETE", f"/repos/{repo}/contents/{quote(path)}", token, ok=(200,), json=body)

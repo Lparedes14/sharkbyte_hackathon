@@ -12,6 +12,7 @@ Local runs, for development:
   python orchestrator/main.py --local-run idea_lab "<idea>"   prints the score card
   python orchestrator/main.py --local-run discovery "<idea>"  prints the PRD files
   python orchestrator/main.py --local-run design <PRD file>   prints the design file
+  python orchestrator/main.py --local-run plan <folder with PRD.md and DESIGN.md>  prints the task files
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import github_io
 import health
 import notify
 import state
-from phases import design, discovery, idea_lab
+from phases import design, discovery, idea_lab, plan
 from phases.common import PhaseError, PhaseResult
 from swarms_client import SwarmsError
 
@@ -110,6 +111,8 @@ def issue_context(ctx: Ctx) -> str:
 def apply(ctx: Ctx, result: PhaseResult) -> None:
     for path, text in result.files.items():
         github_io.put_file(ctx.repo, path, text, result.commit_message or f"Update {path}", ctx.branch)
+    for path in result.delete_paths:
+        github_io.delete_file(ctx.repo, path, result.commit_message or f"Remove {path}", ctx.branch)
 
     body = result.comment
     if result.files:
@@ -176,16 +179,34 @@ def run_design(ctx: Ctx, feedback: str | None) -> None:
     run_phase(ctx, work)
 
 
+def run_plan(ctx: Ctx, feedback: str | None) -> None:
+    def work() -> PhaseResult:
+        prd, _ = github_io.get_file(ctx.repo, "docs/PRD.md", ctx.branch)
+        design_doc, _ = github_io.get_file(ctx.repo, "docs/DESIGN.md", ctx.branch)
+        previous = None
+        if feedback:
+            previous, _ = github_io.get_file(ctx.repo, "tasks/INDEX.md", ctx.branch)
+        result = plan.run(prd or "", design_doc or "", f"issue #{ctx.number}", feedback, previous)
+        # a new plan replaces the old task files, so none are left behind
+        old = github_io.list_dir(ctx.repo, "tasks", ctx.branch)
+        result.delete_paths = [p for p in old if p.endswith(".md") and p not in result.files]
+        return result
+
+    run_phase(ctx, work)
+
+
 def cmd_run(ctx: Ctx, args: str) -> None:
     which = args.split()[0].lower() if args else ""
     if which == "discovery":
         run_discovery(ctx, feedback=None)
     elif which == "design":
         run_design(ctx, feedback=None)
-    elif which in ("feature", "plan"):
-        ctx.comment(f"The `{which}` phase is not built yet. Available now: `/run discovery`, `/run design`.")
+    elif which == "plan":
+        run_plan(ctx, feedback=None)
+    elif which == "feature":
+        ctx.comment("The `feature` phase is not built yet. Available now: `/run discovery`, `/run design`, `/run plan`.")
     else:
-        ctx.comment("Tell me which phase to run, for example `/run discovery` or `/run design`.")
+        ctx.comment("Tell me which phase to run: `/run discovery`, `/run design` or `/run plan`.")
 
 
 def cmd_approve(ctx: Ctx, args: str) -> None:
@@ -205,11 +226,16 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
         run_design(ctx, feedback=None)
         return
     if phase == "design":
+        ctx.comment("Design and scope approved. Starting the Plan phase now; the task list arrives in about 2 minutes.")
         state.set_phase(ctx.repo, ctx.number, ctx.labels, "plan")
+        run_plan(ctx, feedback=None)
+        return
+    if phase == "plan":
+        state.set_phase(ctx.repo, ctx.number, ctx.labels, "build")
         state.set_status(ctx.repo, ctx.number, ctx.labels, None)
         ctx.comment(
-            "Design and scope approved. This issue moves to the Plan phase. "
-            "Plan is not built yet, so nothing runs now."
+            "Plan approved. This issue moves to the Build phase. "
+            "Launching Cursor from here is not built yet, so nothing runs now."
         )
         return
     ctx.comment(f"Approval for the `{phase}` phase is not built yet.")
@@ -228,6 +254,8 @@ def cmd_revise(ctx: Ctx, args: str) -> None:
         run_discovery(ctx, feedback=args)
     elif state.phase(ctx.labels) == "design":
         run_design(ctx, feedback=args)
+    elif state.phase(ctx.labels) == "plan":
+        run_plan(ctx, feedback=args)
     else:
         ctx.comment(f"Revising the `{state.phase(ctx.labels)}` phase is not built yet.")
 
@@ -360,12 +388,20 @@ def run_local_phase(name: str, idea: str) -> int:
         result = idea_lab.run(idea)
     elif name == "discovery":
         result = discovery.run(idea, "a local run")
+    elif name == "plan":
+        # the "idea" argument is a folder holding PRD.md and DESIGN.md
+        folder = Path(idea)
+        result = plan.run(
+            (folder / "PRD.md").read_text(encoding="utf-8"),
+            (folder / "DESIGN.md").read_text(encoding="utf-8"),
+            "a local run",
+        )
     elif name == "design":
         # the "idea" text is the PRD (or a path to a PRD file)
         path = Path(idea)
         result = design.run(path.read_text(encoding="utf-8") if path.is_file() else idea, "a local run")
     else:
-        print("Use idea_lab, discovery or design.")
+        print("Use idea_lab, discovery, design or plan.")
         return 2
     print(result.comment)
     for path, text in result.files.items():

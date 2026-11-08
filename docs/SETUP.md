@@ -52,6 +52,8 @@ If the report says Vercel cannot see the repo, fix Part 1 step 6 (the Vercel Git
 
 **When you approve the PRD,** the Design phase starts by itself and writes `docs/DESIGN.md` about a minute later: stack, pages, data model, security rules and scope. Approve it with "Go", or say what to change.
 
+**After the design, the Plan phase** splits it into 3 to 6 small tasks in `tasks/`, plus `.cursor/rules/project.mdc`. You approve the list with "Go"; Cursor then builds one task at a time.
+
 **If the design uses Supabase (Postgres), the steps for you are** (Project Lead lists them when the design is ready, and walks you through them when the build needs them): create the Supabase project, turn on **Anonymous sign-ins** (Authentication, Sign In / Providers), run the SQL migration that Cursor writes under `supabase/migrations` in the Supabase SQL editor, and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the Vercel project's Environment Variables. Keys never go through chat or GitHub.
 
 ---
@@ -76,7 +78,8 @@ Talk normally. Project Lead finds the project in `projects.json`, picks the repo
 | "Build it." (after an idea was scored) | Part 2. |
 | "Go." / "Yes." (when it asked for approval) | Comments `/approve`. |
 | "Make the quiz shorter." (when it asked for approval) | Comments `/revise "make the quiz shorter"`. |
-| "Go." (when it showed the design) | Comments `/approve`; the issue moves to the Plan phase. |
+| "Go." (when it showed the design) | Comments `/approve`; the Plan phase starts and writes the task list about 2 minutes later. |
+| "Go." (when it showed the plan) | Comments `/approve`; the issue moves to the Build phase. |
 | "Redo the design with fewer tables." | Comments `/revise "redo the design with fewer tables"`. |
 | "Is everything working?" | Comments `/ping` on the "Health check" issue in home base. |
 
@@ -100,7 +103,7 @@ How you work:
   - It is a new idea: open an issue in home base with the label "idea", my words as the description, and comment "/score".
 - When I say to build an idea: propose a repo name (lowercase, dashes), ask public or private, and after my yes comment "/build <name> <public|private>" on the idea's issue.
 - When a webhook arrives, read its "event":
-  - approval_needed (a PRD or a design): open the link, summarize it in 3-5 short lines, and ask me exactly the question. If I ask to see the document, show it here so I do not have to open GitHub. "Go" or "yes" means comment "/approve"; anything else means comment /revise "<my words>".
+  - approval_needed (a PRD, a design or a plan): open the link, summarize it in 3-5 short lines, and ask me exactly the question. If I ask to see the document, show it here so I do not have to open GitHub. "Go" or "yes" means comment "/approve"; anything else means comment /revise "<my words>".
   - repo_created: tell me the project is ready, with its links. If the summary lists steps that need a browser sign-in, follow docs/SETUP.md Part 2: do them yourself if you can, otherwise tell me the exact steps.
   - ping: tell me "Webhook works" and the summary.
   - anything else: tell me the summary and the link.

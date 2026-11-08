@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+import parsing
 from phases.common import PhaseError, PhaseResult, as_list, call, cell, json_from
 
 REQUIRED = ("title", "stack", "pages", "scope_in")
@@ -131,6 +132,7 @@ def run(
         task += "\n\nTHE FOUNDER'S FEEDBACK (apply it):\n" + feedback
 
     response = call("design", task, "design")
+    turns = [role for role, _ in parsing.outputs(response)]
     design = json_from(
         response, REQUIRED, SCHEMA, roles=["MVP Cutter"], any_role_fallback=True, label="formatter-design"
     )
@@ -150,6 +152,7 @@ def run(
     lines = [
         "Design ready from the Design swarm (Swarms `GroupChat`: Architect, UX/UI Designer, "
         "Security Reviewer and MVP Cutter debated it).",
+        f"The chat had {len(turns)} turns: {' → '.join(turns) or 'no turns recorded'}.",
         "",
         f"**{title}**: {len(stack)} stack choices, {len(pages)} pages, {len(tables)} tables.",
         "",

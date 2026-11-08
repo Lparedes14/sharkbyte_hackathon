@@ -72,8 +72,14 @@ def parse_command(body: str) -> str:
     text = (body or "").strip()
     if not text:
         return ""
+    if is_qa_result(text):  # QA Tester's report starts the release vote by itself
+        return "/vote"
     first_word = text.splitlines()[0].split(maxsplit=1)[0]
     return first_word.lower() if first_word.startswith("/") else ""
+
+
+def is_qa_result(body: str) -> bool:
+    return (body or "").lstrip().upper().startswith("QA RESULT:")
 
 
 def command_args(body: str) -> str:
@@ -332,6 +338,10 @@ def cmd_vote(ctx: Ctx, args: str) -> None:
     pr = facts["pr"]
     if pr.get("state") != "open":
         ctx.comment("This pull request is not open, so there is nothing to vote on.")
+        return
+    if args.strip().lower() != "again" and vote.already_voted(facts["comments"]):
+        if args.strip().lower() != "auto":  # an automatic trigger stays quiet
+            ctx.comment("The vote already covers the latest QA result and review. Use `/vote again` to vote again.")
         return
     result = vote.run(
         pr.get("title", ""), facts["task_text"], facts["review_text"], facts["review_verdict"],
@@ -844,7 +854,7 @@ def run_event() -> int:
 
     print(f"Running {command} on {repo}#{ctx.number}")
     try:
-        HANDLERS[command](ctx, command_args(body))
+        HANDLERS[command](ctx, "auto" if is_qa_result(body) else command_args(body))
     except Exception as exc:  # report every failure on the issue, then fail the run
         traceback.print_exc()
         known = (PhaseError, SwarmsError, github_io.GitHubError, build.BuildError)

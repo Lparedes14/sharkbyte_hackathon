@@ -56,6 +56,20 @@ def review_state(comments: list[dict]) -> tuple[str | None, str]:
     return None, ""
 
 
+def already_voted(comments: list[dict]) -> bool:
+    """True when a vote comment is newer than both the latest QA result and the latest code review."""
+    last_vote = last_qa = last_review = -1
+    for i, comment in enumerate(comments or []):
+        body = comment.get("body") or ""
+        if "Release vote:" in body and "MajorityVoting" in body:
+            last_vote = i
+        elif body.lstrip().upper().startswith("QA RESULT"):
+            last_qa = i
+        elif "review-round:" in body and "Code review (round" in body:
+            last_review = i
+    return last_vote > max(last_qa, last_review)
+
+
 def run(
     pr_title: str,
     task_text: str,

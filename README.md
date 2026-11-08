@@ -2,6 +2,20 @@
 
 Talk to a Grok Bot about an idea. A team of AI agents on the Swarms API plans it, Cursor writes the code, Grok Bot tests it like a real user, and nothing ships until you approve it.
 
+## Start here: set up the three bots
+
+**[docs/HOWTO-GROK-BOTS.md](docs/HOWTO-GROK-BOTS.md)** is the step-by-step guide for the hackathon: add the three Grok Bot agents with one click each, give them their instructions, connect their webhooks, test each connection with one command, and run your first project.
+
+| Bot | Add it to your Grok Bot |
+|---|---|
+| Project Lead (you talk to this one) | https://x.ai/bot/egDXuf_4KO1c8LnAUNbbl |
+| Progress Reporter (screenshots) | https://x.ai/bot/tXR4LtstF90Dkx33p0yqA |
+| QA Tester (tests each preview) | https://x.ai/bot/NEcmLsDFXM35i7mVwiOEZ |
+
+Then follow [docs/SETUP.md](docs/SETUP.md) for tokens and secrets.
+
+---
+
 - `PLAN.md` has the full design, the setup tests and the build timeline.
 - `CONTEXT.md` has the latest decisions, what is done and what is next.
 - Copy `.env.example` to `.env` and fill in your own values. `.env` is ignored by git, so never commit it.

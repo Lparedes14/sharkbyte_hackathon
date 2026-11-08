@@ -43,7 +43,7 @@ CONTEXT_LIMIT = 12000
 
 COMMANDS = {
     "home": ("/ping", "/score", "/revise", "/approve", "/build"),
-    "project": ("/ping", "/run", "/approve", "/revise", "/next"),
+    "project": ("/ping", "/run", "/approve", "/revise", "/next", "/vote"),
 }
 
 
@@ -269,6 +269,10 @@ def cmd_next(ctx: Ctx, args: str) -> None:
     launch_next(ctx, again=args.strip().lower() == "again")
 
 
+def cmd_vote(ctx: Ctx, args: str) -> None:
+    ctx.comment("QA result noted. The release vote is not built yet, so nothing runs now.")
+
+
 def cmd_run(ctx: Ctx, args: str) -> None:
     which = args.split()[0].lower() if args else ""
     if which == "discovery":
@@ -376,6 +380,7 @@ HANDLERS = {
     "/revise": cmd_revise,
     "/build": cmd_build,
     "/next": cmd_next,
+    "/vote": cmd_vote,
 }
 
 
@@ -531,7 +536,8 @@ def handle_status(event: dict) -> int:
         "qa_request", repo, pr_link,
         f"Test the preview of task {number:03d} against the acceptance criteria in {acceptance} "
         "that this task delivers (the task file is in tasks/). Check them in a browser like a real user.",
-        "Comment on the PR starting with QA RESULT: PASS or QA RESULT: FAIL, with one line per criterion. Change nothing else.",
+        "Follow your standing instructions: one PR comment that starts with QA RESULT: PASS or QA RESULT: FAIL "
+        "with one line per criterion, then a separate comment with only /vote, and a bug issue for each failed criterion.",
         preview_url=url,
     ))
     return 0

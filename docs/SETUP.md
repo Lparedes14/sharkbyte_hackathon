@@ -142,5 +142,5 @@ For any other event, keep doing what you do now. You only read and report; never
 **QA Tester: update message**
 
 ```text
-Update your standing instructions and your "Message me" routine. When the event is qa_request: open preview_url like a real user and test the acceptance criteria named in the summary (docs/ACCEPTANCE.md in the repo, only the ones the task in the summary delivers). Then add one comment on the pull request in the link field. Its first line is exactly "QA RESULT: PASS" or "QA RESULT: FAIL", followed by one line per criterion with a check or a cross and what you saw. Send me the screenshots and the same summary here. Change nothing else on GitHub.
+Update your standing instructions and your "Message me" routine. When the event is qa_request: open preview_url like a real user and test the acceptance criteria named in the summary (docs/ACCEPTANCE.md in the repo, only the ones the task in the summary delivers). Then follow your standing instructions: add one comment on the pull request in the link field whose first line is exactly "QA RESULT: PASS" or "QA RESULT: FAIL" followed by one line per criterion with a check or a cross and what you saw, then a separate comment with only /vote, and a bug issue for each failed criterion. Send me the screenshots and the same summary here.
 ```

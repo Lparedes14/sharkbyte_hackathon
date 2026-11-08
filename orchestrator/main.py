@@ -31,6 +31,7 @@ import github_io
 import health
 import notify
 import state
+import tasks
 from phases import design, discovery, idea_lab, plan
 from phases.common import PhaseError, PhaseResult
 from swarms_client import SwarmsError
@@ -40,7 +41,7 @@ CONTEXT_LIMIT = 12000
 
 COMMANDS = {
     "home": ("/ping", "/score", "/revise", "/approve", "/build"),
-    "project": ("/ping", "/run", "/approve", "/revise"),
+    "project": ("/ping", "/run", "/approve", "/revise", "/next"),
 }
 
 
@@ -195,6 +196,77 @@ def run_plan(ctx: Ctx, feedback: str | None) -> None:
     run_phase(ctx, work)
 
 
+def launch_next(ctx: Ctx, again: bool = False) -> None:
+    """Hand the next task to Project Lead, which starts a Cursor Cloud Agent for it."""
+    plan_tasks = tasks.list_tasks(ctx.repo, ctx.branch)
+    if not plan_tasks:
+        ctx.comment("There are no task files in `tasks/` yet. Run `/run plan` first.")
+        return
+    since = github_io.last_commit_date(ctx.repo, "tasks/INDEX.md", ctx.branch)
+    prs = tasks.task_prs(github_io.list_pulls(ctx.repo), since)
+    status = tasks.statuses(plan_tasks, prs, tasks.launched_numbers(ctx.labels))
+    task, why = tasks.next_task(plan_tasks, status, again)
+
+    if task is None:
+        if why == "all-merged":
+            state.set_phase(ctx.repo, ctx.number, ctx.labels, "done")
+            state.set_status(ctx.repo, ctx.number, ctx.labels, None)
+            ctx.comment(f"All {len(plan_tasks)} tasks are merged. The build phase is finished.")
+            payload = notify.make_payload(
+                "build_done", ctx.repo, ctx.link, f"All {len(plan_tasks)} tasks are merged on main."
+            )
+            ok, detail = notify.send("PROJECT_LEAD", payload)
+            print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+        elif why == "in-progress":
+            busy = [t for t in plan_tasks if status[t.n] in ("open", "launched")]
+            lines = []
+            for t in busy:
+                pr = prs.get(t.n)
+                lines.append(
+                    f"task {t.n:03d} has PR #{pr['number']} open: review and merge it"
+                    if pr and status[t.n] == "open"
+                    else f"task {t.n:03d} was handed to Cursor and has no PR yet (`/next again` sends it again)"
+                )
+            ctx.comment("Tasks run one at a time: " + "; ".join(lines) + ".")
+        else:
+            ctx.comment("No task can start: the ones before it are not merged yet.")
+        return
+
+    prompt = tasks.cursor_prompt(ctx.repo, task, ctx.number)
+    payload = notify.make_payload(
+        "build_task",
+        ctx.repo,
+        ctx.link,
+        f"Start a Cursor Cloud Agent for task {task.n:03d}: {task.title}. Use the prompt field exactly.",
+        prompt=prompt,
+    )
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+    if not ok:
+        state.set_status(ctx.repo, ctx.number, ctx.labels, "blocked")
+        ctx.comment(f"Could not reach Project Lead to start task {task.n:03d} ({detail}). Run `/next again` to retry.")
+        return
+
+    state.add(ctx.repo, ctx.number, ctx.labels, f"task:{task.n:03d}")
+    state.set_status(ctx.repo, ctx.number, ctx.labels, "running")
+    ctx.comment(
+        f"Task {task.n:03d} ({task.title}) is with Project Lead, which starts a Cursor Cloud Agent for "
+        f"[`{task.path}`](https://github.com/{ctx.repo}/blob/{ctx.branch}/{task.path}). "
+        f"A pull request titled `[task-{task.n:03d}]` should appear in a few minutes."
+    )
+
+
+def cmd_next(ctx: Ctx, args: str) -> None:
+    phase = state.phase(ctx.labels)
+    if phase == "plan":
+        ctx.comment("Approve the plan first; then the first task starts by itself.")
+        return
+    if phase != "build":
+        ctx.comment("`/next` works once the plan is approved (phase `build`).")
+        return
+    launch_next(ctx, again=args.strip().lower() == "again")
+
+
 def cmd_run(ctx: Ctx, args: str) -> None:
     which = args.split()[0].lower() if args else ""
     if which == "discovery":
@@ -233,9 +305,13 @@ def cmd_approve(ctx: Ctx, args: str) -> None:
     if phase == "plan":
         state.set_phase(ctx.repo, ctx.number, ctx.labels, "build")
         state.set_status(ctx.repo, ctx.number, ctx.labels, None)
+        ctx.comment("Plan approved. This issue moves to the Build phase. Handing the first task to Cursor now.")
+        launch_next(ctx)
+        return
+    if phase == "build":
         ctx.comment(
-            "Plan approved. This issue moves to the Build phase. "
-            "Launching Cursor from here is not built yet, so nothing runs now."
+            "Review the pull request on GitHub and merge it when you are happy; the next task then starts by "
+            "itself. Approving and merging from the chat comes with the release flow."
         )
         return
     ctx.comment(f"Approval for the `{phase}` phase is not built yet.")
@@ -297,7 +373,76 @@ HANDLERS = {
     "/approve": cmd_approve,
     "/revise": cmd_revise,
     "/build": cmd_build,
+    "/next": cmd_next,
 }
+
+
+# ---------- pull request events ----------
+
+
+def handle_pull_request(event: dict) -> int:
+    """A Cursor PR titled "[task-NNN] ..." was opened or closed: update the issue, tell Project Lead."""
+    pr = event.get("pull_request") or {}
+    action = event.get("action", "")
+    repository = event.get("repository") or {}
+    repo = repository.get("full_name", "")
+    number = tasks.pr_task_number(pr.get("title", ""))
+    head = ((pr.get("head") or {}).get("repo") or {}).get("full_name", "")
+    if number is None or not repo or head != repo:
+        print("Ignored: not a task PR from this repository.")
+        return 0
+    if action not in ("opened", "reopened", "ready_for_review", "closed"):
+        print(f"Ignored PR action: {action}.")
+        return 0
+
+    os.environ["GITHUB_REPOSITORY"] = repo
+    branch = repository.get("default_branch") or "main"
+    issue = tasks.find_issue(repo, pr.get("body") or "")
+    if not issue:
+        print("No project issue found for this PR; nothing to update.")
+        return 0
+    ctx = Ctx(
+        repo=repo,
+        number=issue["number"],
+        issue=issue,
+        labels=state.names(issue),
+        branch=branch,
+        where="project",
+    )
+    pr_link = pr.get("html_url", "")
+    label = f"task:{number:03d}"
+    title = pr.get("title", "")
+
+    if action == "closed" and not pr.get("merged"):
+        state.set_status(ctx.repo, ctx.number, ctx.labels, None)
+        ctx.comment(
+            f"PR #{pr.get('number')} for task {number:03d} was closed without merging. "
+            "Run `/next` to start it again."
+        )
+        return 0
+
+    if action == "closed":
+        ctx.comment(f"PR #{pr.get('number')} for task {number:03d} is merged. Looking for the next task.")
+        launch_next(ctx)
+        return 0
+
+    github_io.ensure_label(repo, label, "0075ca", "Build task")
+    github_io.add_labels(repo, pr["number"], [label])
+    state.set_status(ctx.repo, ctx.number, ctx.labels, "waiting-approval")
+    ctx.comment(
+        f"Cursor opened [PR #{pr.get('number')}]({pr_link}) for task {number:03d}: {title}. "
+        "Review it and merge it on GitHub when you are happy; the next task starts by itself after the merge."
+    )
+    payload = notify.make_payload(
+        "pr_opened",
+        repo,
+        pr_link,
+        f"Cursor opened a pull request for task {number:03d}: {title}.",
+        "Tell me what you want to do with it: I will not merge anything without your yes.",
+    )
+    ok, detail = notify.send("PROJECT_LEAD", payload)
+    print(f"Project Lead webhook: {'ok' if ok else 'FAILED'} ({detail})")
+    return 0
 
 
 # ---------- event handling ----------
@@ -306,11 +451,21 @@ HANDLERS = {
 def run_event() -> int:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-    if event_name != "issue_comment" or not event_path:
-        print("Not a comment event; nothing to do.")
+    if event_name not in ("issue_comment", "pull_request") or not event_path:
+        print("Not a comment or pull request event; nothing to do.")
         return 0
 
     event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    if event_name == "pull_request":
+        if os.environ.get("ORCH_CONTEXT", "home").strip() != "project":
+            print("Pull request events only run in project repos.")
+            return 0
+        try:
+            return handle_pull_request(event)
+        except Exception as exc:
+            traceback.print_exc()
+            print(f"PR event failed: {type(exc).__name__}")
+            return 1
     if event.get("action") != "created":
         print("Comment was not newly created; nothing to do.")
         return 0

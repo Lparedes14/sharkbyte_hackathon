@@ -54,6 +54,8 @@ If the report says Vercel cannot see the repo, fix Part 1 step 6 (the Vercel Git
 
 **After the design, the Plan phase** splits it into 3 to 6 small tasks in `tasks/`, plus `.cursor/rules/project.mdc`. You approve the list with "Go"; Cursor then builds one task at a time.
 
+**Building.** After you approve the plan, the orchestrator hands task 001 to Project Lead (a `build_task` webhook that carries the exact prompt), and Project Lead starts a Cursor Cloud Agent. Cursor opens a pull request titled `[task-001] ...`. The orchestrator labels it, comments on the issue and tells Project Lead. You review and merge the PR on GitHub; the merge starts the next task by itself, until all tasks are merged (`phase:done`). Tasks always run one at a time.
+
 **If the design uses Supabase (Postgres), the steps for you are** (Project Lead lists them when the design is ready, and walks you through them when the build needs them): create the Supabase project, turn on **Anonymous sign-ins** (Authentication, Sign In / Providers), run the SQL migration that Cursor writes under `supabase/migrations` in the Supabase SQL editor, and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the Vercel project's Environment Variables. Keys never go through chat or GitHub.
 
 ---
@@ -79,7 +81,8 @@ Talk normally. Project Lead finds the project in `projects.json`, picks the repo
 | "Go." / "Yes." (when it asked for approval) | Comments `/approve`. |
 | "Make the quiz shorter." (when it asked for approval) | Comments `/revise "make the quiz shorter"`. |
 | "Go." (when it showed the design) | Comments `/approve`; the Plan phase starts and writes the task list about 2 minutes later. |
-| "Go." (when it showed the plan) | Comments `/approve`; the issue moves to the Build phase. |
+| "Go." (when it showed the plan) | Comments `/approve`; the issue moves to the Build phase and the first task goes to Cursor. |
+| "Start the next task." / "Try that task again." | Comments `/next` (or `/next again` to send a task to Cursor again when no PR came). |
 | "Redo the design with fewer tables." | Comments `/revise "redo the design with fewer tables"`. |
 | "Is everything working?" | Comments `/ping` on the "Health check" issue in home base. |
 
@@ -105,17 +108,20 @@ How you work:
 - When a webhook arrives, read its "event":
   - approval_needed (a PRD, a design or a plan): open the link, summarize it in 3-5 short lines, and ask me exactly the question. If I ask to see the document, show it here so I do not have to open GitHub. "Go" or "yes" means comment "/approve"; anything else means comment /revise "<my words>".
   - repo_created: tell me the project is ready, with its links. If the summary lists steps that need a browser sign-in, follow docs/SETUP.md Part 2: do them yourself if you can, otherwise tell me the exact steps.
+  - build_task: start a Cursor Cloud Agent on the repo in the "repo" field, and give it exactly the text in the "prompt" field as its instructions. Do not change the prompt and do not merge anything. Tell me in one line which task started. When Cursor gives you the pull request link, tell me.
+  - pr_opened: tell me in 2-3 lines that Cursor's pull request is ready, with the link. If I ask, open the preview and show me a screenshot. Never merge or approve it yourself; I merge it on GitHub.
+  - build_done: tell me all tasks are built and merged.
   - ping: tell me "Webhook works" and the summary.
   - anything else: tell me the summary and the link.
 - Never create a repo, merge, or release without my explicit yes in this chat. Never paste secrets, tokens or keys in chat or on GitHub.
-- Commands you may post: /score, /build, /run discovery, /approve, /revise, /ping.
+- Commands you may post: /score, /build, /run discovery, /approve, /revise, /next, /ping.
 - Keep messages short and always include the link.
 ```
 
 ### Project Lead: update its "Message me" routine
 
 ```text
-Update the "Message me" routine so it follows your standing instructions for every webhook event: approval_needed, repo_created (tell me the project is ready; if the summary lists browser steps, do them yourself from docs/SETUP.md Part 2 or tell me the exact steps), ping, and anything else.
+Update the "Message me" routine so it follows your standing instructions for every webhook event: approval_needed, build_task (start a Cursor Cloud Agent with the prompt field, exactly), pr_opened, build_done, repo_created (tell me the project is ready; if the summary lists browser steps, do them yourself from docs/SETUP.md Part 2 or tell me the exact steps), ping, and anything else.
 ```
 
 ### Progress Reporter and QA Tester

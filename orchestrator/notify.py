@@ -34,9 +34,11 @@ def make_payload(
     summary: str,
     question: str = "",
     preview_url: str | None = None,
+    prompt: str = "",
 ) -> dict:
-    """Webhook body in our own format (PLAN.md section 7)."""
-    return {
+    """Webhook body in our own format (PLAN.md section 7). `prompt` is the exact text Project Lead
+    gives to a Cursor Cloud Agent (event build_task)."""
+    payload = {
         "event": event,
         "repo": f"https://github.com/{repo}" if repo else "",
         "link": link,
@@ -44,6 +46,9 @@ def make_payload(
         "question": question,
         "preview_url": preview_url,
     }
+    if prompt:
+        payload["prompt"] = prompt
+    return payload
 
 
 def send(prefix: str, payload: dict) -> tuple[bool, str]:

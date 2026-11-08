@@ -192,3 +192,29 @@ def delete_file(repo: str, path: str, message: str, branch: str, token: str | No
         return
     body = {"message": message, "sha": sha, "branch": branch}
     _request("DELETE", f"/repos/{repo}/contents/{quote(path)}", token, ok=(200,), json=body)
+
+
+def list_pulls(repo: str, token: str | None = None) -> list[dict]:
+    """The latest 100 pull requests (open, closed and merged), newest first."""
+    resp = _request(
+        "GET", f"/repos/{repo}/pulls?state=all&sort=created&direction=desc&per_page=100", token, ok=(200,)
+    )
+    return resp.json()
+
+
+def list_open_issues_with_label(repo: str, label: str, token: str | None = None) -> list[dict]:
+    resp = _request(
+        "GET", f"/repos/{repo}/issues?state=open&labels={quote(label)}&per_page=30", token, ok=(200,)
+    )
+    return [i for i in resp.json() if "pull_request" not in i]
+
+
+def last_commit_date(repo: str, path: str, ref: str, token: str | None = None) -> str | None:
+    """ISO date of the newest commit that touched a path, or None."""
+    resp = _request(
+        "GET", f"/repos/{repo}/commits?path={quote(path)}&sha={quote(ref, safe='')}&per_page=1", token, ok=(200,)
+    )
+    data = resp.json()
+    if not data:
+        return None
+    return ((data[0].get("commit") or {}).get("committer") or {}).get("date")

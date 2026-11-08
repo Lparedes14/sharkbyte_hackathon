@@ -25,6 +25,7 @@ from pathlib import Path
 from nacl import encoding, public
 
 import github_io
+import previews
 import vercel
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
@@ -145,9 +146,11 @@ def create_project(
         time.sleep(2)
 
     # Vercel first, so the template commits below already trigger its first deployment.
+    production = None
     if vercel.token():
         try:
             vercel_name = vercel.link_repo(full)
+            production = vercel.production_url(vercel_name)
             result.done.append(
                 f"Created the Vercel project '{vercel_name}' linked to the repo, with Require Log In off"
             )
@@ -169,6 +172,10 @@ def create_project(
     github_io.put_file(full, "docs/IDEA.md", idea_doc(idea_issue, idea_comments, source_link),
                        "Add the idea from the Idea Inbox", branch, token)
     result.done.append("Added the agent workflow and docs/IDEA.md")
+    if production:
+        github_io.put_file(full, "docs/LINKS.md", previews.links_doc(production),
+                           "Add the production URL", branch, token)
+        result.done.append(f"Saved the production URL ({production}) in docs/LINKS.md")
 
     # 3. Secrets.
     key = github_io.secrets_public_key(full, token)

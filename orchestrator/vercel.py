@@ -71,6 +71,23 @@ def project_name(repo_full: str) -> str:
     return repo_full.split("/")[-1].lower()
 
 
+def production_url(name: str) -> str | None:
+    """The project's stable production domain (name.vercel.app), known before the first deploy."""
+    try:
+        resp = requests.get(
+            f"{API}/v9/projects/{name}/domains", headers=_headers(), params=_team_params(), timeout=TIMEOUT
+        )
+        if resp.status_code != 200:
+            return None
+        for domain in resp.json().get("domains", []):
+            host = domain.get("name", "")
+            if host.endswith(".vercel.app") and not domain.get("redirect") and not domain.get("gitBranch"):
+                return "https://" + host
+    except (requests.RequestException, ValueError, VercelError):
+        return None
+    return None
+
+
 def link_repo(repo_full: str) -> str:
     """Create or reuse the Vercel project for this repo, then make its previews public.
 

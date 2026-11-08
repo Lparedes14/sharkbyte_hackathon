@@ -218,3 +218,9 @@ def last_commit_date(repo: str, path: str, ref: str, token: str | None = None) -
     if not data:
         return None
     return ((data[0].get("commit") or {}).get("committer") or {}).get("date")
+
+
+def pulls_for_commit(repo: str, sha: str, token: str | None = None) -> list[dict]:
+    """The pull requests a commit belongs to (a squash-merge commit maps to its merged PR)."""
+    resp = _request("GET", f"/repos/{repo}/commits/{quote(sha)}/pulls", token, ok=(200, 404, 422))
+    return resp.json() if resp.status_code == 200 else []

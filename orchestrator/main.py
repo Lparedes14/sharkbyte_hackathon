@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ import build
 import github_io
 import health
 import notify
+import previews
 import state
 import tasks
 from phases import design, discovery, idea_lab, plan
@@ -445,23 +447,113 @@ def handle_pull_request(event: dict) -> int:
     return 0
 
 
+# ---------- Vercel status events ----------
+
+PREVIEW_WAIT_TRIES = 6
+PREVIEW_WAIT_SECONDS = 8
+
+
+def _send(prefix: str, payload: dict) -> None:
+    ok, detail = notify.send(prefix, payload)
+    print(f"{prefix} webhook: {'ok' if ok else 'FAILED'} ({detail})")
+
+
+def handle_status(event: dict) -> int:
+    """Vercel finished a deployment. Send the URL to Progress Reporter and QA Tester."""
+    if event.get("context") != "Vercel" or event.get("state") not in ("success", "failure", "error"):
+        print("Ignored: not a finished Vercel deployment.")
+        return 0
+    repository = event.get("repository") or {}
+    repo = repository.get("full_name", "")
+    branch = repository.get("default_branch") or "main"
+    sha = event.get("sha", "")
+    os.environ["GITHUB_REPOSITORY"] = repo
+
+    # Only commits that belong to a task PR matter: orchestrator commits (docs, plan) have no PR.
+    prs = [p for p in github_io.pulls_for_commit(repo, sha) if tasks.pr_task_number(p.get("title", "")) is not None]
+    if not prs:
+        print("Ignored: this deployment is not for a task PR.")
+        return 0
+    pr = prs[0]
+    number = tasks.pr_task_number(pr["title"])
+    pr_link = pr.get("html_url", "")
+    merged = bool(pr.get("merged_at"))
+    ok = event.get("state") == "success"
+    description = event.get("description") or event.get("state")
+
+    if not ok:
+        where = "production" if merged else "the preview"
+        github_io.post_comment(
+            repo, pr["number"],
+            f"The Vercel build for {where} failed: {description}. Details: {event.get('target_url', '')}",
+        )
+        _send("PROJECT_LEAD", notify.make_payload(
+            "build_failed", repo, pr_link,
+            f"The Vercel build for task {number:03d} ({where}) failed: {description}.",
+            "Tell me, and offer to send the error to Cursor so it fixes the PR.",
+        ))
+        return 0
+
+    if merged:
+        text, _ = github_io.get_file(repo, "docs/LINKS.md", branch)
+        url = previews.production_url_from_links(text)
+        if not url:
+            print("No production URL in docs/LINKS.md; nothing to send.")
+            return 0
+        _send("PROGRESS_REPORTER", notify.make_payload(
+            "production_live", repo, pr_link,
+            f"Task {number:03d} is live in production: {pr.get('title', '')}.",
+            "Open the production URL, send me desktop and phone screenshots, and one line on what changed.",
+            preview_url=url,
+        ))
+        return 0
+
+    url = None
+    for attempt in range(PREVIEW_WAIT_TRIES):  # the bot comment can land a few seconds after the status
+        url = previews.preview_url_from_comments(github_io.list_comments(repo, pr["number"]))
+        if url:
+            break
+        if attempt < PREVIEW_WAIT_TRIES - 1:
+            time.sleep(PREVIEW_WAIT_SECONDS)
+    if not url:
+        github_io.post_comment(repo, pr["number"], "The preview is ready, but I could not find its URL in the Vercel comment.")
+        return 0
+
+    github_io.post_comment(repo, pr["number"], f"Preview ready: {url}\n\nProgress Reporter and QA Tester have the link.")
+    acceptance = f"https://github.com/{repo}/blob/{branch}/docs/ACCEPTANCE.md"
+    _send("PROGRESS_REPORTER", notify.make_payload(
+        "preview_ready", repo, pr_link,
+        f"Preview for task {number:03d} is ready: {pr.get('title', '')}.",
+        "Open the preview URL, send me desktop and phone screenshots, and one line on what you see.",
+        preview_url=url,
+    ))
+    _send("QA_TESTER", notify.make_payload(
+        "qa_request", repo, pr_link,
+        f"Test the preview of task {number:03d} against the acceptance criteria in {acceptance} "
+        "that this task delivers (the task file is in tasks/). Check them in a browser like a real user.",
+        "Comment on the PR starting with QA RESULT: PASS or QA RESULT: FAIL, with one line per criterion. Change nothing else.",
+        preview_url=url,
+    ))
+    return 0
+
+
 # ---------- event handling ----------
 
 
 def run_event() -> int:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-    if event_name not in ("issue_comment", "pull_request") or not event_path:
-        print("Not a comment or pull request event; nothing to do.")
+    if event_name not in ("issue_comment", "pull_request", "status") or not event_path:
+        print("Not a comment, pull request or status event; nothing to do.")
         return 0
 
     event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-    if event_name == "pull_request":
+    if event_name in ("pull_request", "status"):
         if os.environ.get("ORCH_CONTEXT", "home").strip() != "project":
-            print("Pull request events only run in project repos.")
+            print("Pull request and status events only run in project repos.")
             return 0
         try:
-            return handle_pull_request(event)
+            return handle_pull_request(event) if event_name == "pull_request" else handle_status(event)
         except Exception as exc:
             traceback.print_exc()
             print(f"PR event failed: {type(exc).__name__}")

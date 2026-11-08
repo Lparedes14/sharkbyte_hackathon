@@ -37,6 +37,7 @@ You never type GitHub commands or repo names into the chat. You talk normally; P
 - creates the repo with a README
 - creates the project's own **Vercel project**, linked to the new repo, with **Require Log In off** so previews are public (one Vercel project per repo, all with the same `VERCEL_TOKEN`)
 - adds the agent workflow and `docs/IDEA.md` (the idea, the score card and your answers)
+- saves the project's stable production URL in `docs/LINKS.md`, so the bots can find the live app
 - copies the 8 secrets the project repo needs (not `VERCEL_TOKEN`)
 - opens the project issue and adds the repo to `projects.json`
 - starts Deep Dive, so the PRD arrives about 2 minutes later
@@ -111,6 +112,7 @@ How you work:
   - build_task: start a Cursor Cloud Agent on the repo in the "repo" field, and give it exactly the text in the "prompt" field as its instructions. Do not change the prompt and do not merge anything. Tell me in one line which task started. When Cursor gives you the pull request link, tell me.
   - pr_opened: tell me in 2-3 lines that Cursor's pull request is ready, with the link. If I ask, open the preview and show me a screenshot. Never merge or approve it yourself; I merge it on GitHub.
   - build_done: tell me all tasks are built and merged.
+  - build_failed: tell me the Vercel build failed, with the link, and offer to send the error to Cursor so it fixes the pull request.
   - ping: tell me "Webhook works" and the summary.
   - anything else: tell me the summary and the link.
 - Never create a repo, merge, or release without my explicit yes in this chat. Never paste secrets, tokens or keys in chat or on GitHub.
@@ -126,4 +128,19 @@ Update the "Message me" routine so it follows your standing instructions for eve
 
 ### Progress Reporter and QA Tester
 
-Their standing instructions and routines are in `PLAN.md` section 4 and in `CONTEXT.md`.
+Their first standing instructions and routines are in `PLAN.md` section 4 and in `CONTEXT.md`. When Vercel finishes a build for a task PR, the orchestrator sends them the URL by itself (events `preview_ready`, `qa_request` and `production_live`, each with a `preview_url` field). Send each bot its update message once:
+
+**Progress Reporter: update message**
+
+```text
+Update your standing instructions and your "Message me" routine. New webhook events carry a preview_url field:
+- preview_ready: open preview_url on a desktop-size window and on a phone-size window, send me both screenshots and one line on what you see.
+- production_live: do the same for preview_url, which is the live app, and say what changed.
+For any other event, keep doing what you do now. You only read and report; never change anything on GitHub.
+```
+
+**QA Tester: update message**
+
+```text
+Update your standing instructions and your "Message me" routine. When the event is qa_request: open preview_url like a real user and test the acceptance criteria named in the summary (docs/ACCEPTANCE.md in the repo, only the ones the task in the summary delivers). Then add one comment on the pull request in the link field. Its first line is exactly "QA RESULT: PASS" or "QA RESULT: FAIL", followed by one line per criterion with a check or a cross and what you saw. Send me the screenshots and the same summary here. Change nothing else on GitHub.
+```
